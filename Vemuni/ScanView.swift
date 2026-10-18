@@ -104,6 +104,12 @@ struct ScanView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+
+                    if mode == .menu {
+                        Text("Up to \(maximumPageCount) pages per menu scan")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     if mode == .menu && images.count < maximumPageCount {
                         HStack(spacing: 12) {
@@ -183,38 +189,46 @@ struct ScanView: View {
     }
 
     private var pageStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(images.enumerated()), id: \.offset) { index, image in
-                    ZStack(alignment: .topTrailing) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 76, height: 96)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .overlay(alignment: .bottomLeading) {
-                                Text("Page \(index + 1)")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .padding(6)
-                                    .background(.black.opacity(0.55))
-                                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                                    .padding(5)
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 76, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(alignment: .bottomLeading) {
+                                    Text("Page \(index + 1)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .padding(6)
+                                        .background(.black.opacity(0.55))
+                                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                                        .padding(5)
+                                }
+                            Button {
+                                images.remove(at: index)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.black.opacity(0.65))
                             }
-                        Button {
-                            images.remove(at: index)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, Color.black.opacity(0.65))
+                            .offset(x: 5, y: -5)
+                            .disabled(isAnalyzing)
                         }
-                        .offset(x: 5, y: -5)
-                        .disabled(isAnalyzing)
                     }
                 }
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 6)
+
+            Text(images.count == maximumPageCount
+                 ? "Maximum of \(maximumPageCount) pages reached"
+                 : "\(images.count) of \(maximumPageCount) pages selected")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(images.count == maximumPageCount ? VemuniTheme.copper : Color.secondary)
         }
         .accessibilityLabel("\(images.count) menu pages selected")
     }

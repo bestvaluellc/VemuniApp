@@ -8,6 +8,8 @@ struct ResultsView: View {
     let receiptImagePath: String?
     let savedVisitID: String?
     @State private var selectedTip = 20
+    @State private var selectedItemFilter: MenuItemFilter = .all
+    @State private var selectedDrinkFilter: DrinkFilter = .all
     @State private var selectedPriceRange: MenuPriceRange = .any
     @State private var selectedItemIDs: Set<String> = []
     @State private var showingOrder = false
@@ -80,6 +82,16 @@ struct ResultsView: View {
             guard result.kind != ScanMode.receipt.rawValue, let savedVisitID else { return }
             try? await Task.sleep(for: .milliseconds(350))
             try? await VisitStorageService().saveMenuPicks(menuPickSnapshots, for: savedVisitID)
+        }
+        .toolbar {
+            if result.kind != ScanMode.receipt.rawValue {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: sharedMenuText) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share full menu")
+                }
+            }
         }
     }
 
@@ -236,6 +248,41 @@ struct ResultsView: View {
     private var menuFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                ForEach(MenuItemFilter.allCases) { filter in
+                    Button(filter.title) {
+                        selectedItemFilter = filter
+                        if filter != .drinks { selectedDrinkFilter = .all }
+                    }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(selectedItemFilter == filter ? VemuniTheme.onCopper : VemuniTheme.espresso)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(selectedItemFilter == filter ? VemuniTheme.copper : VemuniTheme.paper)
+                        .clipShape(Capsule())
+                        .buttonStyle(.plain)
+                }
+
+                if selectedItemFilter == .drinks {
+                    Menu {
+                        Picker("Drink type", selection: $selectedDrinkFilter) {
+                            ForEach(DrinkFilter.allCases) { filter in
+                                Text(filter.title).tag(filter)
+                            }
+                        }
+                    } label: {
+                        Label(selectedDrinkFilter.title, systemImage: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(VemuniTheme.espresso)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .background(VemuniTheme.paper)
+                            .clipShape(Capsule())
+                    }
+                }
+
+                Divider()
+                    .frame(height: 22)
+
                 ForEach(MenuPriceRange.allCases) { range in
                     Button(range.title) { selectedPriceRange = range }
                         .font(.caption.weight(.semibold))
@@ -255,7 +302,9 @@ struct ResultsView: View {
     private var filteredMenuSections: [FilteredMenuSection] {
         result.menuSections.compactMap { section in
             let items = section.items.filter { item in
-                selectedPriceRange.contains(item.numericPrice)
+                selectedItemFilter.matches(section: section, item: item)
+                    && selectedDrinkFilter.matches(section: section, item: item, itemFilter: selectedItemFilter)
+                    && selectedPriceRange.contains(item.numericPrice)
             }
             return items.isEmpty ? nil : FilteredMenuSection(sourceID: section.id, name: section.name, items: items)
         }
@@ -287,6 +336,33 @@ struct ResultsView: View {
 
     private var picksPersistenceToken: String {
         "\(savedVisitID ?? "unsaved")|\(selectedItemIDs.sorted().joined(separator: ","))"
+    }
+
+    private var sharedMenuText: String {
+        var lines: [String] = []
+        if let restaurantName = result.restaurantName, !restaurantName.isEmpty {
+            lines.append(restaurantName)
+        }
+        lines.append("Menu")
+
+        for section in result.menuSections {
+            lines.append("")
+            lines.append(section.name.uppercased())
+            for item in section.items {
+                var heading = "• \(item.originalName)"
+                if item.englishName != item.originalName, !item.englishName.isEmpty {
+                    heading += " (\(item.englishName))"
+                }
+                if let price = item.price, !price.isEmpty {
+                    heading += " — \(price)"
+                }
+                lines.append(heading)
+                if !item.explanation.isEmpty {
+                    lines.append("  \(item.explanation)")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func selectionKey(_ item: MenuItem, in sectionID: String) -> String {
@@ -405,6 +481,107 @@ struct ResultsView: View {
     private func currency(_ amount: Double?) -> String {
         guard let amount else { return "—" }
         return amount.formatted(.currency(code: result.currencyCode.isEmpty ? "USD" : result.currencyCode))
+    }
+}
+
+private enum MenuItemFilter: String, CaseIterable, Identifiable {
+    case all
+    case drinks
+    case desserts
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All items"
+        case .drinks: return "Drinks"
+        case .desserts: return "Desserts"
+        }
+    }
+
+    func matches(section: MenuSection, item: MenuItem) -> Bool {
+        guard self != .all else { return true }
+        let text = [
+            section.name,
+            section.sectionType ?? "",
+            item.itemType ?? "",
+            item.originalName,
+            item.englishName
+        ]
+            .map { $0.lowercased() }
+            .joined(separator: " ")
+
+        switch self {
+        case .all:
+            return true
+        case .drinks:
+            return item.itemType == "drink"
+                || item.itemType == "wine"
+                || section.sectionType == "drink"
+                || section.sectionType == "wine"
+                || ["drink", "cocktail", "wine", "beer", "beverage", "coffee", "tea"]
+                    .contains { text.contains($0) }
+        case .desserts:
+            return ["dessert", "sweet", "pastry", "cake", "ice cream", "gelato", "sorbet"]
+                .contains { text.contains($0) }
+        }
+    }
+}
+
+private enum DrinkFilter: String, CaseIterable, Identifiable {
+    case all
+    case wine
+    case cocktails
+    case beer
+    case nonAlcoholic
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All drinks"
+        case .wine: return "Wine"
+        case .cocktails: return "Cocktails"
+        case .beer: return "Beer"
+        case .nonAlcoholic: return "Non-alcoholic"
+        }
+    }
+
+    func matches(section: MenuSection, item: MenuItem, itemFilter: MenuItemFilter) -> Bool {
+        guard itemFilter == .drinks, self != .all else { return true }
+        let text = [
+            section.name,
+            section.sectionType ?? "",
+            item.itemType ?? "",
+            item.drinkDetails?.drinkType ?? "",
+            item.drinkDetails?.baseSpirit ?? "",
+            item.originalName,
+            item.englishName
+        ]
+            .map { $0.lowercased() }
+            .joined(separator: " ")
+
+        switch self {
+        case .all:
+            return true
+        case .wine:
+            return item.itemType == "wine"
+                || section.sectionType == "wine"
+                || ["wine", "champagne", "prosecco", "sparkling", "rosé", "rose wine"]
+                    .contains { text.contains($0) }
+        case .cocktails:
+            return ["cocktail", "mixed drink", "martini", "margarita", "highball", "spritz", "spirit"]
+                .contains { text.contains($0) }
+                || !(item.drinkDetails?.baseSpirit?.isEmpty ?? true)
+        case .beer:
+            return ["beer", "ale", "lager", "stout", "porter", "pilsner", "ipa", "cider"]
+                .contains { text.contains($0) }
+        case .nonAlcoholic:
+            return [
+                "non-alcoholic", "nonalcoholic", "alcohol-free", "mocktail", "soft drink",
+                "soda", "juice", "water", "coffee", "tea", "lemonade"
+            ].contains { text.contains($0) }
+        }
     }
 }
 

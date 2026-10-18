@@ -21,7 +21,14 @@ struct SavedScansView: View {
         .background(VemuniTheme.cream.ignoresSafeArea())
         .navigationTitle("Saved Scans")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { Task { await loadVisits() } }
+        .task {
+            // Let the navigation push finish before starting Firebase and list work.
+            if visits.isEmpty {
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+            guard !Task.isCancelled else { return }
+            await loadVisits()
+        }
         .confirmationDialog(
             "Delete this scan?",
             isPresented: Binding(
@@ -100,10 +107,15 @@ struct SavedScansView: View {
 
     @MainActor
     private func loadVisits() async {
-        isLoading = true
+        if visits.isEmpty { isLoading = true }
         errorMessage = nil
         do {
-            visits = try await VisitStorageService().fetchVisits()
+            let loadedVisits = try await VisitStorageService().fetchVisits()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                visits = loadedVisits
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
