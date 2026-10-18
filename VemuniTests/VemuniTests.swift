@@ -22,4 +22,24 @@ final class VemuniTests: XCTestCase {
         )
         XCTAssertEqual(receipt.totalWithTip(percent: 20), 128.25)
     }
+
+    func testMenuItemExtractsNumericPrice() {
+        let item = MenuItem(
+            originalName: "Soup", englishName: "Soup", explanation: "",
+            price: "$12.50", itemType: "food", dietary: [], allergens: [],
+            spiceLevel: nil, wineDetails: nil, drinkDetails: nil
+        )
+
+        XCTAssertEqual(item.numericPrice, 12.50)
+    }
+
+    func testMenuItemSupportsDecimalCommaPrice() {
+        let item = MenuItem(
+            originalName: "Salade", englishName: "Salad", explanation: "",
+            price: "€9,50", itemType: "food", dietary: [], allergens: [],
+            spiceLevel: nil, wineDetails: nil, drinkDetails: nil
+        )
+
+        XCTAssertEqual(item.numericPrice, 9.50)
+    }
 }

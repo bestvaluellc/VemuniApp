@@ -38,6 +38,11 @@ final class AuthViewModel: ObservableObject {
         await perform(method: "password") { try await Auth.auth().createUser(withEmail: email, password: password) }
     }
 
+    func signInAsGuest() async {
+        VemuniAnalytics.authAttempt(method: "guest")
+        await perform(method: "guest") { try await Auth.auth().signInAnonymously() }
+    }
+
     func resetPassword(email: String) async -> Bool {
         do {
             try await Auth.auth().sendPasswordReset(withEmail: email)

@@ -38,6 +38,19 @@ struct AuthView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
 
+                        Button {
+                            isWorking = true
+                            Task {
+                                await auth.signInAsGuest()
+                                isWorking = false
+                            }
+                        } label: {
+                            Label("Continue as Guest", systemImage: "person.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(AuthButtonStyle())
+                        .disabled(isWorking)
+
                         HStack {
                             Rectangle().frame(height: 1).foregroundStyle(.quaternary)
                             Text("or").font(.footnote).foregroundStyle(.secondary)

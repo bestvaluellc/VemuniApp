@@ -25,9 +25,12 @@ exports.analyzeDiningPhoto = onRequest(
     }
 
     const mode = request.body?.mode === "receipt" ? "receipt" : "menu";
-    const imageBase64 = String(request.body?.imageBase64 || "");
-    if (!imageBase64 || imageBase64.length > 14_000_000) {
-      response.status(400).json({ error: "A JPEG image under 10 MB is required." });
+    const legacyImage = String(request.body?.imageBase64 || "");
+    const requestedImages = Array.isArray(request.body?.imagesBase64) ? request.body.imagesBase64 : [];
+    const imagesBase64 = (requestedImages.length ? requestedImages : [legacyImage]).map(String).filter(Boolean);
+    const totalImageBytes = imagesBase64.reduce((total, image) => total + image.length, 0);
+    if (!imagesBase64.length || imagesBase64.length > 8 || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
+      response.status(400).json({ error: "Add between one and eight clear menu pages and try again." });
       return;
     }
 
@@ -54,8 +57,17 @@ exports.analyzeDiningPhoto = onRequest(
           {
             role: "user",
             content: [
-              { type: "input_text", text: mode === "menu" ? "Read and explain this menu." : "Analyze this restaurant bill." },
-              { type: "input_image", image_url: `data:image/jpeg;base64,${imageBase64}`, detail: "high" }
+              {
+                type: "input_text",
+                text: mode === "menu"
+                  ? `Read and explain this ${imagesBase64.length}-page menu. Pages are supplied in order.`
+                  : "Analyze this restaurant bill."
+              },
+              ...imagesBase64.map((image) => ({
+                type: "input_image",
+                image_url: `data:image/jpeg;base64,${image}`,
+                detail: "high"
+              }))
             ]
           }
         ],
@@ -80,12 +92,18 @@ exports.analyzeDiningPhoto = onRequest(
 );
 
 function systemPrompt(mode) {
-  const common = `You are Vemuni, a careful restaurant menu and receipt reader. Analyze only visible evidence. Automatically detect the language and return clear American English. Preserve original dish names. Never invent prices, totals, ingredients, allergens, dietary status, or fees. Use null or empty arrays when unknown. Allergens are possible indicators, not guarantees. Currency should be a three-letter ISO code when reasonably inferable, otherwise USD. The response must match the supplied JSON schema.`;
+  const common = `You are Vemuni, a careful restaurant food, wine, drinks, and receipt reader. Analyze only visible evidence. Automatically detect the language and return clear American English. Preserve original item names. Never invent prices, totals, vintages, producers, regions, ingredients, allergens, dietary status, alcohol percentages, or fees. Use null or empty arrays when unknown. Allergens are possible indicators, not guarantees. Currency should be a three-letter ISO code when reasonably inferable, otherwise USD. The response must match the supplied JSON schema.`;
 
   if (mode === "receipt") {
-    return `${common}\nThis is a restaurant bill. Extract visible line items and totals. Determine whether gratuity, service charge, or another fee is already included. Set possibleDuplicateTipRisk true whenever another tip could duplicate an included gratuity or service charge. Set tipBase to the subtotal before tax when visible. Return no menu sections.`;
+    return `${common}\nThis is a restaurant bill. Extract visible line items and totals. Determine whether gratuity, service charge, or another fee is already included. Set possibleDuplicateTipRisk true whenever another tip could duplicate an included gratuity or service charge. Set tipBase to the subtotal before tax when visible. Set menuType to unknown and return no menu sections.`;
   }
-  return `${common}\nThis is a restaurant menu. Organize dishes by visible section. Explain each dish in plain English, including cooking style and important ingredients only when reasonably supported by the name or description. Translate foreign descriptions naturally rather than word-for-word. For English menus, explain unfamiliar culinary terms. Return receipt as null.`;
+  return `${common}\nThis is a restaurant menu that may contain food, wine, cocktails, beer, other drinks, or a mixture, across multiple ordered pages. Combine all pages into one menu, preserve visible section order, and remove only exact duplicates caused by overlapping photos. Classify the overall menuType and every section and item. Do not merge distinct items merely because their names are similar.
+
+For food: explain the dish in plain English, including cooking style and important ingredients only when reasonably supported by visible text. Translate foreign descriptions naturally and explain unfamiliar culinary terms.
+
+For wine: fill wineDetails and set drinkDetails to null. Printed facts such as producer, vintage, grape, region, country, and prices must come from visible text; use null when absent. You may provide a typical tasting profile, body, acidity, tannin, sweetness, general food pairings, and serving guidance when reasonably supported by the named grape, region, appellation, or recognized wine style. Set profileIsTypical true whenever any profile or pairing detail is inferred rather than printed. Do not imply that a typical characteristic was printed on the menu.
+
+For cocktails, beer, and other drinks: fill drinkDetails and set wineDetails to null. Use visible ingredients. You may explain a widely recognized standard cocktail or drink style, but never invent a restaurant-specific ingredient or ABV. For food items, both detail objects must be null. Return receipt as null.`;
 }
 
 function resultSchema() {
@@ -94,9 +112,10 @@ function resultSchema() {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["kind", "detectedLanguage", "notice", "restaurantName", "currencyCode", "menuSections", "receipt", "warnings"],
+    required: ["kind", "menuType", "detectedLanguage", "notice", "restaurantName", "currencyCode", "menuSections", "receipt", "warnings"],
     properties: {
       kind: { type: "string", enum: ["menu", "receipt"] },
+      menuType: { type: "string", enum: ["food", "wine", "drinks", "mixed", "unknown"] },
       detectedLanguage: { type: "string" },
       notice: { type: "string" },
       restaurantName: nullableString,
@@ -106,23 +125,27 @@ function resultSchema() {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["name", "items"],
+          required: ["name", "sectionType", "items"],
           properties: {
             name: { type: "string" },
+            sectionType: { type: "string", enum: ["food", "wine", "drink", "mixed", "unknown"] },
             items: {
               type: "array",
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["originalName", "englishName", "explanation", "price", "dietary", "allergens", "spiceLevel"],
+                required: ["originalName", "englishName", "explanation", "price", "itemType", "dietary", "allergens", "spiceLevel", "wineDetails", "drinkDetails"],
                 properties: {
                   originalName: { type: "string" },
                   englishName: { type: "string" },
                   explanation: { type: "string" },
                   price: nullableString,
+                  itemType: { type: "string", enum: ["food", "wine", "drink", "unknown"] },
                   dietary: { type: "array", items: { type: "string" } },
                   allergens: { type: "array", items: { type: "string" } },
-                  spiceLevel: nullableString
+                  spiceLevel: nullableString,
+                  wineDetails: wineDetailsSchema(nullableString),
+                  drinkDetails: drinkDetailsSchema(nullableString)
                 }
               }
             }
@@ -161,6 +184,58 @@ function resultSchema() {
       },
       warnings: { type: "array", items: { type: "string" } }
     }
+  };
+}
+
+function wineDetailsSchema(nullableString) {
+  return {
+    anyOf: [
+      { type: "null" },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["producer", "grape", "region", "country", "vintage", "style", "glassPrice", "bottlePrice", "body", "acidity", "tannin", "sweetness", "alcohol", "flavors", "foodPairings", "servingSuggestion", "profileIsTypical"],
+        properties: {
+          producer: nullableString,
+          grape: nullableString,
+          region: nullableString,
+          country: nullableString,
+          vintage: nullableString,
+          style: nullableString,
+          glassPrice: nullableString,
+          bottlePrice: nullableString,
+          body: nullableString,
+          acidity: nullableString,
+          tannin: nullableString,
+          sweetness: nullableString,
+          alcohol: nullableString,
+          flavors: { type: "array", items: { type: "string" } },
+          foodPairings: { type: "array", items: { type: "string" } },
+          servingSuggestion: nullableString,
+          profileIsTypical: { type: "boolean" }
+        }
+      }
+    ]
+  };
+}
+
+function drinkDetailsSchema(nullableString) {
+  return {
+    anyOf: [
+      { type: "null" },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["drinkType", "baseSpirit", "ingredients", "flavorProfile", "abv"],
+        properties: {
+          drinkType: nullableString,
+          baseSpirit: nullableString,
+          ingredients: { type: "array", items: { type: "string" } },
+          flavorProfile: { type: "array", items: { type: "string" } },
+          abv: nullableString
+        }
+      }
+    ]
   };
 }
 
