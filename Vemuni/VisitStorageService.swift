@@ -32,15 +32,47 @@ struct SavedVisit: Equatable {
     let receiptImagePath: String?
 }
 
+struct SavedMenuPick: Codable, Equatable, Identifiable {
+    let selectionKey: String
+    let sectionName: String
+    let originalName: String
+    let englishName: String
+    let price: String?
+    let numericPrice: Double?
+
+    var id: String { selectionKey }
+}
+
 struct SavedVisitRecord: Identifiable, Equatable {
     let id: String
     let result: VemuniScanResult
     let createdAt: Date?
     let pageCount: Int
     let receiptImagePath: String?
+    let menuPicks: [SavedMenuPick]
 }
 
 struct VisitStorageService {
+    func saveMenuPicks(_ picks: [SavedMenuPick], for visitId: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw VisitStorageError.notSignedIn
+        }
+        let encoded = try JSONEncoder().encode(picks)
+        guard let pickData = try JSONSerialization.jsonObject(with: encoded) as? [[String: Any]] else {
+            throw VisitStorageError.invalidScanData
+        }
+
+        try await Firestore.firestore()
+            .collection("users")
+            .document(userId)
+            .collection("visits")
+            .document(visitId)
+            .updateData([
+                "menuPicks": pickData,
+                "updatedAt": FieldValue.serverTimestamp()
+            ])
+    }
+
     func loadReceiptImage(at path: String) async throws -> UIImage {
         let data = try await Storage.storage()
             .reference(withPath: path)
@@ -99,13 +131,22 @@ struct VisitStorageService {
             }
             let encodedResult = try JSONSerialization.data(withJSONObject: scanData)
             let result = try JSONDecoder().decode(VemuniScanResult.self, from: encodedResult)
+            let menuPicks: [SavedMenuPick]
+            if let pickData = data["menuPicks"] as? [[String: Any]],
+               let encodedPicks = try? JSONSerialization.data(withJSONObject: pickData),
+               let decodedPicks = try? JSONDecoder().decode([SavedMenuPick].self, from: encodedPicks) {
+                menuPicks = decodedPicks
+            } else {
+                menuPicks = []
+            }
 
             return SavedVisitRecord(
                 id: document.documentID,
                 result: result,
                 createdAt: (data["createdAt"] as? Timestamp)?.dateValue(),
                 pageCount: data["pageCount"] as? Int ?? 1,
-                receiptImagePath: data["receiptImagePath"] as? String
+                receiptImagePath: data["receiptImagePath"] as? String,
+                menuPicks: menuPicks
             )
         }
     }
@@ -152,6 +193,7 @@ struct VisitStorageService {
                 "restaurantName": result.restaurantName ?? NSNull(),
                 "currencyCode": result.currencyCode,
                 "pageCount": sourceImages.count,
+                "menuPicks": [],
                 "scanResult": scanData,
                 "createdAt": FieldValue.serverTimestamp(),
                 "updatedAt": FieldValue.serverTimestamp()

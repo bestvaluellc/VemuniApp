@@ -21,7 +21,7 @@ struct SavedScansView: View {
         .background(VemuniTheme.cream.ignoresSafeArea())
         .navigationTitle("Saved Scans")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadVisits() }
+        .onAppear { Task { await loadVisits() } }
         .confirmationDialog(
             "Delete this scan?",
             isPresented: Binding(
@@ -57,7 +57,9 @@ struct SavedScansView: View {
                         ResultsView(
                             result: visit.result,
                             saveState: nil,
-                            receiptImagePath: visit.receiptImagePath
+                            receiptImagePath: visit.receiptImagePath,
+                            savedVisitID: visit.id,
+                            initialMenuPicks: visit.menuPicks
                         )
                             .navigationTitle(visit.title)
                             .navigationBarTitleDisplayMode(.inline)
@@ -150,6 +152,10 @@ private struct SavedScanRow: View {
                     if let createdAt = visit.createdAt {
                         Text("•")
                         Text(createdAt, format: .dateTime.month(.abbreviated).day().year())
+                    }
+                    if !visit.menuPicks.isEmpty {
+                        Text("•")
+                        Text("\(visit.menuPicks.count) \(visit.menuPicks.count == 1 ? "pick" : "picks")")
                     }
                 }
                 .font(.subheadline)

@@ -6,6 +6,7 @@ struct ResultsView: View {
     let saveState: ScanSaveState?
     let receiptImage: UIImage?
     let receiptImagePath: String?
+    let savedVisitID: String?
     @State private var selectedTip = 20
     @State private var selectedPriceRange: MenuPriceRange = .any
     @State private var selectedItemIDs: Set<String> = []
@@ -17,12 +18,16 @@ struct ResultsView: View {
         result: VemuniScanResult,
         saveState: ScanSaveState?,
         receiptImage: UIImage? = nil,
-        receiptImagePath: String? = nil
+        receiptImagePath: String? = nil,
+        savedVisitID: String? = nil,
+        initialMenuPicks: [SavedMenuPick] = []
     ) {
         self.result = result
         self.saveState = saveState
         self.receiptImage = receiptImage
         self.receiptImagePath = receiptImagePath
+        self.savedVisitID = savedVisitID
+        _selectedItemIDs = State(initialValue: Set(initialMenuPicks.map(\.selectionKey)))
     }
 
     var body: some View {
@@ -70,6 +75,11 @@ struct ResultsView: View {
             withAnimation(.easeOut(duration: 0.25)) {
                 showingDetectionBanner = false
             }
+        }
+        .task(id: picksPersistenceToken) {
+            guard result.kind != ScanMode.receipt.rawValue, let savedVisitID else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            try? await VisitStorageService().saveMenuPicks(menuPickSnapshots, for: savedVisitID)
         }
     }
 
@@ -195,7 +205,7 @@ struct ResultsView: View {
             HStack(spacing: 10) {
                 Image(systemName: "bag.fill")
                     .foregroundStyle(VemuniTheme.copper)
-                Text("Order").fontWeight(.semibold)
+                Text("My picks").fontWeight(.semibold)
                 Text("· \(selectedItems.count) \(selectedItems.count == 1 ? "item" : "items")")
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -211,7 +221,7 @@ struct ResultsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Show order, \(selectedItems.count) items, \(orderTotalText)")
+        .accessibilityLabel("Show My picks, \(selectedItems.count) items, \(orderTotalText)")
     }
 
     private var orderTotalText: String {
@@ -255,9 +265,28 @@ struct ResultsView: View {
         result.menuSections.flatMap { section in
             section.items.compactMap { item in
                 let key = selectionKey(item, in: section.id)
-                return selectedItemIDs.contains(key) ? OrderItem(key: key, item: item) : nil
+                return selectedItemIDs.contains(key)
+                    ? OrderItem(key: key, sectionName: section.name, item: item)
+                    : nil
             }
         }
+    }
+
+    private var menuPickSnapshots: [SavedMenuPick] {
+        selectedItems.map { orderItem in
+            SavedMenuPick(
+                selectionKey: orderItem.key,
+                sectionName: orderItem.sectionName,
+                originalName: orderItem.item.originalName,
+                englishName: orderItem.item.englishName,
+                price: orderItem.item.price,
+                numericPrice: orderItem.item.numericPrice
+            )
+        }
+    }
+
+    private var picksPersistenceToken: String {
+        "\(savedVisitID ?? "unsaved")|\(selectedItemIDs.sorted().joined(separator: ","))"
     }
 
     private func selectionKey(_ item: MenuItem, in sectionID: String) -> String {
@@ -414,6 +443,7 @@ private struct FilteredMenuSection: Identifiable {
 
 private struct OrderItem: Identifiable {
     let key: String
+    let sectionName: String
     let item: MenuItem
     var id: String { key }
 }
@@ -473,7 +503,7 @@ private struct OrderSummaryView: View {
                     }
                 }
             }
-            .navigationTitle("My order")
+            .navigationTitle("My picks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -585,7 +615,7 @@ private struct OrderSelectionButton: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: isInOrder ? "checkmark.circle.fill" : "plus.circle.fill")
-                Text(isInOrder ? "Added to order" : "Add to order")
+                Text(isInOrder ? "Added to my picks" : "Add to my picks")
                 Spacer()
                 if let price = item.price, !price.isEmpty {
                     Text(price)
@@ -609,7 +639,7 @@ private struct OrderSelectionButton: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .background(.bar)
-        .accessibilityLabel(isInOrder ? "Remove \(item.originalName) from order" : "Add \(item.originalName) to order")
+        .accessibilityLabel(isInOrder ? "Remove \(item.originalName) from my picks" : "Add \(item.originalName) to my picks")
     }
 }
 

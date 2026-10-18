@@ -13,6 +13,7 @@ struct ScanView: View {
     @State private var isAnalyzing = false
     @State private var result: VemuniScanResult?
     @State private var saveState: ScanSaveState?
+    @State private var savedVisitID: String?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -22,7 +23,8 @@ struct ScanView: View {
                     ResultsView(
                         result: result,
                         saveState: saveState,
-                        receiptImage: mode == .receipt ? images.first : nil
+                        receiptImage: mode == .receipt ? images.first : nil,
+                        savedVisitID: savedVisitID
                     )
                 } else {
                     scanner
@@ -252,8 +254,11 @@ struct ScanView: View {
                     onSuccessfulScan()
                 }
                 do {
-                    _ = try await VisitStorageService().save(result: value, sourceImages: images)
-                    await MainActor.run { saveState = .saved }
+                    let savedVisit = try await VisitStorageService().save(result: value, sourceImages: images)
+                    await MainActor.run {
+                        savedVisitID = savedVisit.id
+                        saveState = .saved
+                    }
                 } catch {
                     await MainActor.run { saveState = .failed(error.localizedDescription) }
                 }
