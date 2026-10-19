@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://vemuni.chicplume10.chatgpt.site/sitemap.xml
+Sitemap: https://vemuni.bestvaluellc.com/sitemap.xml
