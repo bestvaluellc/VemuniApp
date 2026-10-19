@@ -13,6 +13,7 @@ Vemuni is a SwiftUI iPhone app that makes restaurant menus easier to read and ch
 - Firebase Analytics events for acquisition and funnel measurement without menu, receipt, image, or email contents
 - Ten introductory scans followed by one free scan per UTC day, enforced server-side
 - Firebase HTTPS function that keeps the OpenAI API key off the phone
+- Per-scan AI usage records and lifetime token totals in Firestore, without menu text or images
 - Bundle ID `bestvaluellc.apps.vemuni`
 
 ## Open the iPhone app
@@ -33,7 +34,7 @@ firebase functions:secrets:set OPENAI_API_KEY
 firebase deploy --only functions,firestore:rules
 ```
 
-The endpoint is `analyzeDiningPhoto` in `us-central1`. It verifies a Firebase ID token, sends the image to the OpenAI Responses API using structured output, records only scan allowance counters in Firestore, and does not save the uploaded image.
+The endpoint is `analyzeDiningPhoto` in `us-central1`. It verifies a Firebase ID token, sends the image to the OpenAI Responses API using structured output, records scan allowance counters and token-usage metadata in Firestore, and does not save the uploaded image. Usage records contain the response ID, scan type, page count, model, input, cached-input, output, reasoning, and total token counts. They do not contain menu text, receipt values, or images.
 
 ## Analytics events
 

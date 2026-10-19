@@ -13,6 +13,9 @@ struct ResultsView: View {
     @State private var selectedPriceRange: MenuPriceRange = .any
     @State private var selectedItemIDs: Set<String> = []
     @State private var showingOrder = false
+    @State private var showingFilters = false
+    @State private var searchText = ""
+    @State private var isSearchPresented = false
     @State private var showingDetectionBanner = true
     @State private var showingReceiptImage = false
 
@@ -61,6 +64,14 @@ struct ResultsView: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showingFilters) {
+            MenuFilterSheet(
+                itemFilter: $selectedItemFilter,
+                drinkFilter: $selectedDrinkFilter,
+                priceRange: $selectedPriceRange
+            )
+            .presentationDetents([.medium, .large])
+        }
         .fullScreenCover(isPresented: $showingReceiptImage) {
             ReceiptImageViewer(
                 localImage: receiptImage,
@@ -86,6 +97,12 @@ struct ResultsView: View {
         .toolbar {
             if result.kind != ScanMode.receipt.rawValue {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Button { isSearchPresented = true } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel("Search menu")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     ShareLink(item: sharedMenuText) {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -93,6 +110,12 @@ struct ResultsView: View {
                 }
             }
         }
+        .searchable(
+            text: $searchText,
+            isPresented: $isSearchPresented,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: "Search menu"
+        )
     }
 
     private func saveBanner(_ state: ScanSaveState) -> some View {
@@ -164,9 +187,11 @@ struct ResultsView: View {
     private var menuView: some View {
         if filteredMenuSections.isEmpty {
             ContentUnavailableView(
-                "No menu items",
-                systemImage: "line.3.horizontal.decrease.circle",
-                description: Text("Try a different category or price range.")
+                searchText.isEmpty ? "No menu items" : "No matching items",
+                systemImage: searchText.isEmpty ? "line.3.horizontal.decrease.circle" : "magnifyingglass",
+                description: Text(searchText.isEmpty
+                    ? "Try a different category or price range."
+                    : "Try another search or reset your filters.")
             )
             .frame(maxWidth: .infinity)
             .padding(.vertical, 30)
@@ -246,68 +271,116 @@ struct ResultsView: View {
     }
 
     private var menuFilters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(MenuItemFilter.allCases) { filter in
-                    Button(filter.title) {
-                        selectedItemFilter = filter
-                        if filter != .drinks { selectedDrinkFilter = .all }
-                    }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(selectedItemFilter == filter ? VemuniTheme.onCopper : VemuniTheme.espresso)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 7)
-                        .background(selectedItemFilter == filter ? VemuniTheme.copper : VemuniTheme.paper)
-                        .clipShape(Capsule())
-                        .buttonStyle(.plain)
+        Button { showingFilters = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundStyle(VemuniTheme.copper)
+                Text("Filter")
+                    .fontWeight(.semibold)
+                if activeFilterCount > 0 {
+                    Text("\(activeFilterCount)")
+                        .font(.caption2.bold())
+                        .foregroundStyle(VemuniTheme.onCopper)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(VemuniTheme.copper)
+                        .clipShape(Circle())
                 }
-
-                if selectedItemFilter == .drinks {
-                    Menu {
-                        Picker("Drink type", selection: $selectedDrinkFilter) {
-                            ForEach(DrinkFilter.allCases) { filter in
-                                Text(filter.title).tag(filter)
-                            }
-                        }
-                    } label: {
-                        Label(selectedDrinkFilter.title, systemImage: "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(VemuniTheme.espresso)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(VemuniTheme.paper)
-                            .clipShape(Capsule())
-                    }
-                }
-
-                Divider()
-                    .frame(height: 22)
-
-                ForEach(MenuPriceRange.allCases) { range in
-                    Button(range.title) { selectedPriceRange = range }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(selectedPriceRange == range ? VemuniTheme.onCopper : VemuniTheme.espresso)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 7)
-                        .background(selectedPriceRange == range ? VemuniTheme.copper : VemuniTheme.paper)
-                        .clipShape(Capsule())
-                        .buttonStyle(.plain)
-                }
+                Spacer()
+                Text(filterSummary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(.tertiary)
             }
+            .font(.subheadline)
+            .foregroundStyle(VemuniTheme.espresso)
             .padding(.horizontal, 20)
-            .padding(.vertical, 9)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Filter, \(filterSummary)")
+    }
+
+    private var activeFilterCount: Int {
+        var count = 0
+        if selectedItemFilter != .all { count += 1 }
+        if selectedItemFilter == .drinks, selectedDrinkFilter != .all { count += 1 }
+        if selectedPriceRange != .any { count += 1 }
+        return count
+    }
+
+    private var filterSummary: String {
+        let itemTitle = selectedItemFilter == .drinks && selectedDrinkFilter != .all
+            ? selectedDrinkFilter.title
+            : selectedItemFilter.title
+        return "\(itemTitle) · \(selectedPriceRange.title)"
     }
 
     private var filteredMenuSections: [FilteredMenuSection] {
-        result.menuSections.compactMap { section in
+        var rankedSections: [RankedFilteredMenuSection] = []
+
+        for (originalIndex, section) in result.menuSections.enumerated() {
             let items = section.items.filter { item in
-                selectedItemFilter.matches(section: section, item: item)
-                    && selectedDrinkFilter.matches(section: section, item: item, itemFilter: selectedItemFilter)
-                    && selectedPriceRange.contains(item.numericPrice)
+                guard selectedItemFilter.matches(section: section, item: item) else { return false }
+                guard selectedDrinkFilter.matches(section: section, item: item, itemFilter: selectedItemFilter) else { return false }
+                guard selectedPriceRange.contains(item.filterPrice) else { return false }
+                return item.matchesSearch(searchText, sectionName: section.name)
             }
-            return items.isEmpty ? nil : FilteredMenuSection(sourceID: section.id, name: section.name, items: items)
+
+            guard !items.isEmpty else { continue }
+            rankedSections.append(RankedFilteredMenuSection(
+                rank: menuSectionRank(section),
+                originalIndex: originalIndex,
+                section: FilteredMenuSection(sourceID: section.id, name: section.name, items: items)
+            ))
         }
+
+        rankedSections.sort { left, right in
+            left.rank == right.rank
+                ? left.originalIndex < right.originalIndex
+                : left.rank < right.rank
+        }
+        return rankedSections.map(\.section)
+    }
+
+    private func menuSectionRank(_ section: MenuSection) -> Int {
+        let name = section.name.lowercased()
+        let containsAny: ([String]) -> Bool = { terms in
+            terms.contains { containsMenuTerm($0, in: name) }
+        }
+
+        if section.sectionType == "wine"
+            || section.items.contains(where: { $0.itemType == "wine" }) {
+            return 90
+        }
+        if containsAny(["dessert", "desserts", "sweet", "sweets", "pastry", "pastries"])
+            || section.items.contains(where: { MenuItemFilter.desserts.matches(section: section, item: $0) }) {
+            return 50
+        }
+        if containsAny(["mocktail", "mocktails", "non-alcoholic", "nonalcoholic", "alcohol-free", "soft drinks", "soda", "juice", "water", "coffee", "tea"]) {
+            return 60
+        }
+        if containsAny(["cocktail", "cocktails", "mixed drinks"]) { return 70 }
+        if containsAny(["beer", "beers", "ale", "lager", "cider"]) { return 80 }
+        if containsAny(["spirit", "spirits", "whiskey", "whisky", "bourbon", "scotch", "tequila", "mezcal", "vodka", "gin", "rum", "cognac", "brandy"]) {
+            return 85
+        }
+        if section.sectionType == "drink"
+            || section.items.contains(where: { $0.itemType == "drink" }) {
+            return 75
+        }
+        if containsAny(["appetizer", "appetizers", "starter", "starters", "first", "small plates", "snacks", "raw bar"]) {
+            return 10
+        }
+        if containsAny(["soup", "soups"]) { return 15 }
+        if containsAny(["salad", "salads"]) { return 20 }
+        if containsAny(["side", "sides", "accompaniment", "accompaniments"]) { return 40 }
+        if containsAny(["entree", "entrees", "main", "mains", "turf", "surf", "steak", "steaks", "seafood", "pasta"]) {
+            return 30
+        }
+        return 30
     }
 
     private var selectedItems: [OrderItem] {
@@ -350,10 +423,10 @@ struct ResultsView: View {
             lines.append(section.name.uppercased())
             for item in section.items {
                 var heading = "• \(item.originalName)"
-                if item.englishName != item.originalName, !item.englishName.isEmpty {
+                if item.hasDistinctEnglishName {
                     heading += " (\(item.englishName))"
                 }
-                if let price = item.price, !price.isEmpty {
+                if let price = item.displayPrice, !price.isEmpty {
                     heading += " — \(price)"
                 }
                 lines.append(heading)
@@ -486,6 +559,7 @@ struct ResultsView: View {
 
 private enum MenuItemFilter: String, CaseIterable, Identifiable {
     case all
+    case food
     case drinks
     case desserts
 
@@ -494,36 +568,64 @@ private enum MenuItemFilter: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .all: return "All items"
+        case .food: return "Food"
         case .drinks: return "Drinks"
         case .desserts: return "Desserts"
         }
     }
 
     func matches(section: MenuSection, item: MenuItem) -> Bool {
-        guard self != .all else { return true }
-        let text = [
-            section.name,
-            section.sectionType ?? "",
-            item.itemType ?? "",
-            item.originalName,
-            item.englishName
-        ]
+        let sectionText = [section.name, section.sectionType ?? ""]
             .map { $0.lowercased() }
             .joined(separator: " ")
+        let itemLabelText = [item.itemType ?? "", item.originalName, item.englishName]
+            .map { $0.lowercased() }
+            .joined(separator: " ")
+        let itemText = "\(itemLabelText) \(item.explanation.lowercased())"
+        guard self != .all else { return true }
+        let categoryText = "\(sectionText) \(itemLabelText)"
 
         switch self {
         case .all:
             return true
+        case .food:
+            return !MenuItemFilter.drinks.matches(section: section, item: item)
+                && !MenuItemFilter.desserts.matches(section: section, item: item)
         case .drinks:
             return item.itemType == "drink"
                 || item.itemType == "wine"
                 || section.sectionType == "drink"
                 || section.sectionType == "wine"
-                || ["drink", "cocktail", "wine", "beer", "beverage", "coffee", "tea"]
-                    .contains { text.contains($0) }
+                || ["drink", "drinks", "cocktail", "cocktails", "wine", "wines", "beer", "beers", "beverage", "beverages", "coffee", "tea"]
+                    .contains { containsMenuTerm($0, in: categoryText) }
         case .desserts:
-            return ["dessert", "sweet", "pastry", "cake", "ice cream", "gelato", "sorbet"]
-                .contains { text.contains($0) }
+            let dessertSectionTerms = [
+                "dessert", "desserts", "sweet", "sweets", "pastry", "pastries", "after dinner"
+            ]
+            if dessertSectionTerms.contains(where: { containsMenuTerm($0, in: sectionText) }) {
+                return true
+            }
+
+            let savoryTerms = [
+                "savory", "crab", "fish", "salmon", "cod", "shrimp", "lobster",
+                "goat cheese", "blue cheese", "black truffle", "white truffle", "truffle oil", "potato", "corn", "rice",
+                "zucchini", "vegetable", "meat", "chicken", "pork", "beef"
+            ]
+            if savoryTerms.contains(where: { containsMenuTerm($0, in: itemText) }) {
+                return false
+            }
+
+            let unambiguousDessertTerms = [
+                "dessert", "desserts", "ice cream", "gelato", "sorbet", "cheesecake",
+                "brownie", "brownies", "cookie", "cookies", "pudding", "mousse",
+                "tiramisu", "crème brûlée", "creme brulee", "pie", "pies", "pastry", "pastries"
+            ]
+            if unambiguousDessertTerms.contains(where: { containsMenuTerm($0, in: itemText) }) {
+                return true
+            }
+
+            let hasCake = ["cake", "cakes"].contains { containsMenuTerm($0, in: itemText) }
+            return hasCake
         }
     }
 }
@@ -532,6 +634,7 @@ private enum DrinkFilter: String, CaseIterable, Identifiable {
     case all
     case wine
     case cocktails
+    case spirits
     case beer
     case nonAlcoholic
 
@@ -542,6 +645,7 @@ private enum DrinkFilter: String, CaseIterable, Identifiable {
         case .all: return "All drinks"
         case .wine: return "Wine"
         case .cocktails: return "Cocktails"
+        case .spirits: return "Spirits"
         case .beer: return "Beer"
         case .nonAlcoholic: return "Non-alcoholic"
         }
@@ -567,22 +671,31 @@ private enum DrinkFilter: String, CaseIterable, Identifiable {
         case .wine:
             return item.itemType == "wine"
                 || section.sectionType == "wine"
-                || ["wine", "champagne", "prosecco", "sparkling", "rosé", "rose wine"]
-                    .contains { text.contains($0) }
+                || ["wine", "wines", "champagne", "prosecco", "sparkling", "rosé", "rose wine"]
+                    .contains { containsMenuTerm($0, in: text) }
         case .cocktails:
-            return ["cocktail", "mixed drink", "martini", "margarita", "highball", "spritz", "spirit"]
-                .contains { text.contains($0) }
-                || !(item.drinkDetails?.baseSpirit?.isEmpty ?? true)
+            return ["cocktail", "cocktails", "mixed drink", "mixed drinks", "martini", "margarita", "highball", "spritz"]
+                .contains { containsMenuTerm($0, in: text) }
+        case .spirits:
+            return [
+                "spirits", "tequila", "whiskey", "whisky", "scotch", "cognac", "bourbon",
+                "vodka", "gin", "rum", "mezcal", "brandy", "liqueur"
+            ].contains { containsMenuTerm($0, in: text) }
         case .beer:
             return ["beer", "ale", "lager", "stout", "porter", "pilsner", "ipa", "cider"]
-                .contains { text.contains($0) }
+                .contains { containsMenuTerm($0, in: text) }
         case .nonAlcoholic:
             return [
                 "non-alcoholic", "nonalcoholic", "alcohol-free", "mocktail", "soft drink",
                 "soda", "juice", "water", "coffee", "tea", "lemonade"
-            ].contains { text.contains($0) }
+            ].contains { containsMenuTerm($0, in: text) }
         }
     }
+}
+
+private func containsMenuTerm(_ term: String, in text: String) -> Bool {
+    let escapedTerm = NSRegularExpression.escapedPattern(for: term)
+    return text.range(of: "\\b\(escapedTerm)\\b", options: .regularExpression) != nil
 }
 
 private enum MenuPriceRange: String, CaseIterable, Identifiable {
@@ -611,11 +724,80 @@ private enum MenuPriceRange: String, CaseIterable, Identifiable {
     }
 }
 
+private struct MenuFilterSheet: View {
+    @Binding var itemFilter: MenuItemFilter
+    @Binding var drinkFilter: DrinkFilter
+    @Binding var priceRange: MenuPriceRange
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Item type") {
+                    Picker("Item type", selection: $itemFilter) {
+                        ForEach(MenuItemFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.inline)
+                }
+
+                if itemFilter == .drinks {
+                    Section("Drink type") {
+                        Picker("Drink type", selection: $drinkFilter) {
+                            ForEach(DrinkFilter.allCases) { filter in
+                                Text(filter.title).tag(filter)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.inline)
+                    }
+                }
+
+                Section("Price") {
+                    Picker("Price", selection: $priceRange) {
+                        ForEach(MenuPriceRange.allCases) { range in
+                            Text(range.title).tag(range)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.inline)
+                }
+            }
+            .navigationTitle("Filter menu")
+            .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: itemFilter) { _, newValue in
+                if newValue != .drinks { drinkFilter = .all }
+            }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        itemFilter = .all
+                        drinkFilter = .all
+                        priceRange = .any
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .fontWeight(.semibold)
+                }
+            }
+        }
+    }
+}
+
 private struct FilteredMenuSection: Identifiable {
     let sourceID: String
     let name: String
     let items: [MenuItem]
     var id: String { sourceID }
+}
+
+private struct RankedFilteredMenuSection {
+    let rank: Int
+    let originalIndex: Int
+    let section: FilteredMenuSection
 }
 
 private struct OrderItem: Identifiable {
@@ -640,14 +822,14 @@ private struct OrderSummaryView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(orderItem.item.originalName)
                                     .font(.body.weight(.semibold))
-                                if orderItem.item.englishName != orderItem.item.originalName {
+                                if orderItem.item.hasDistinctEnglishName {
                                     Text(orderItem.item.englishName)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
                             Spacer()
-                            Text(orderItem.item.price ?? "—")
+                            Text(orderItem.item.displayPrice ?? "—")
                                 .foregroundStyle(VemuniTheme.espresso)
                             Button {
                                 remove(orderItem.key)
@@ -673,7 +855,7 @@ private struct OrderSummaryView: View {
                                 .fontWeight(.bold)
                         }
                         if pricedItemsCount < items.count {
-                            Text("Some item prices weren’t available and aren’t included in the subtotal.")
+                            Text("Market, per-unit, and choice-based prices aren’t included in the subtotal.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -703,49 +885,12 @@ private struct MenuItemRow: View {
     let item: MenuItem
     let isInOrder: Bool
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let itemSymbol {
-                Image(systemName: itemSymbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(VemuniTheme.copper)
-                    .frame(width: 20)
-                    .padding(.top, 2)
+        Group {
+            if item.itemType == "wine", let wine = item.wineDetails {
+                wineRow(wine)
+            } else {
+                standardRow
             }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(item.originalName)
-                    .font(.headline)
-                    .foregroundStyle(VemuniTheme.espresso)
-                if item.englishName != item.originalName {
-                    Text(item.englishName).font(.subheadline.weight(.medium))
-                }
-                Text(item.explanation)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                if item.itemType == "wine", let wine = item.wineDetails {
-                    Text(wineSummary(wine))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(VemuniTheme.sage)
-                        .lineLimit(2)
-                } else if item.itemType == "drink", let drink = item.drinkDetails,
-                          !drink.flavorProfile.isEmpty {
-                    Text(drink.flavorProfile.joined(separator: " • "))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(VemuniTheme.sage)
-                } else if !item.dietary.isEmpty {
-                    Text(item.dietary.joined(separator: " • "))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(VemuniTheme.sage)
-                }
-            }
-            Spacer(minLength: 8)
-            if let price = item.price {
-                Text(price).font(.headline).foregroundStyle(VemuniTheme.espresso)
-            }
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
         }
         .padding(16)
         .background(isInOrder ? VemuniTheme.sage.opacity(0.20) : VemuniTheme.paper)
@@ -758,6 +903,100 @@ private struct MenuItemRow: View {
         }
     }
 
+    private var standardRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let itemSymbol {
+                Image(systemName: itemSymbol)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(VemuniTheme.copper)
+                    .frame(width: 20)
+                    .padding(.top, 2)
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(rowTitle)
+                    .font(.headline)
+                    .foregroundStyle(VemuniTheme.espresso)
+                if item.hasDistinctEnglishName {
+                    Text(item.englishName).font(.subheadline.weight(.medium))
+                    Text(item.explanation)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                } else if !item.explanation.isEmpty {
+                    Text(item.explanation)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+                if item.itemType == "drink", let drink = item.drinkDetails,
+                   !drink.flavorProfile.isEmpty {
+                    Text(drink.flavorProfile.joined(separator: " • "))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(VemuniTheme.sage)
+                } else if !item.dietary.isEmpty {
+                    Text(item.dietary.joined(separator: " • "))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(VemuniTheme.sage)
+                }
+            }
+            Spacer(minLength: 8)
+            if let price = item.displayPrice {
+                Text(price).font(.headline).foregroundStyle(VemuniTheme.espresso)
+            }
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.tertiary)
+                .padding(.top, 4)
+        }
+    }
+
+    private func wineRow(_ wine: WineDetails) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "wineglass")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(VemuniTheme.copper)
+                    .frame(width: 20)
+                Text(rowTitle)
+                    .font(.headline)
+                    .foregroundStyle(VemuniTheme.espresso)
+                Spacer(minLength: 8)
+                if let price = item.displayPrice {
+                    Text(price)
+                        .font(.headline)
+                        .foregroundStyle(VemuniTheme.espresso)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+
+            let details = wineSummary(wine, excluding: rowTitle)
+            if !details.isEmpty {
+                Text(details)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 32)
+            }
+
+            if !wine.foodPairings.isEmpty {
+                Label {
+                    Text(wine.foodPairings.prefix(3).joined(separator: " • "))
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "fork.knife")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(VemuniTheme.sage)
+                .padding(.leading, 32)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Pairs with \(wine.foodPairings.prefix(3).joined(separator: ", "))")
+            }
+        }
+    }
+
     private var itemSymbol: String? {
         switch item.itemType {
         case "wine": return "wineglass"
@@ -766,11 +1005,26 @@ private struct MenuItemRow: View {
         }
     }
 
-    private func wineSummary(_ wine: WineDetails) -> String {
+    private var rowTitle: String {
+        guard item.itemType == "wine",
+              let producer = item.wineDetails?.producer?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !producer.isEmpty else {
+            return item.originalName
+        }
+        return producer
+    }
+
+    private func wineSummary(_ wine: WineDetails, excluding title: String) -> String {
         [wine.grape, wine.region, wine.vintage]
-            .compactMap { value in
-                guard let value, !value.isEmpty else { return nil }
+            .compactMap { (value: String?) -> String? in
+                guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !value.isEmpty,
+                      !title.localizedCaseInsensitiveContains(value) else { return nil }
                 return value
+            }
+            .reduce(into: [String]()) { values, value in
+                guard !values.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else { return }
+                values.append(value)
             }
             .joined(separator: " • ")
     }
@@ -794,7 +1048,7 @@ private struct OrderSelectionButton: View {
                 Image(systemName: isInOrder ? "checkmark.circle.fill" : "plus.circle.fill")
                 Text(isInOrder ? "Added to my picks" : "Add to my picks")
                 Spacer()
-                if let price = item.price, !price.isEmpty {
+                if let price = item.displayPrice, !price.isEmpty {
                     Text(price)
                 }
             }
@@ -837,7 +1091,7 @@ private struct WineDetailView: View {
                     Text(item.originalName)
                         .font(.system(.largeTitle, design: .serif, weight: .bold))
                         .foregroundStyle(VemuniTheme.espresso)
-                    if item.englishName != item.originalName {
+                    if item.hasDistinctEnglishName {
                         Text(item.englishName).font(.title3.weight(.semibold))
                     }
                     if !wineOrigin.isEmpty {
@@ -932,7 +1186,7 @@ private struct WineDetailView: View {
         var values: [(String, String)] = []
         if let glass = wine.glassPrice, !glass.isEmpty { values.append(("Glass", glass)) }
         if let bottle = wine.bottlePrice, !bottle.isEmpty { values.append(("Bottle", bottle)) }
-        if values.isEmpty, let price = item.price, !price.isEmpty { values.append(("Price", price)) }
+        if values.isEmpty, let price = item.displayPrice, !price.isEmpty { values.append(("Price", price)) }
         return values
     }
 
@@ -979,7 +1233,7 @@ private struct DrinkDetailView: View {
                 Text(item.originalName)
                     .font(.system(.largeTitle, design: .serif, weight: .bold))
                     .foregroundStyle(VemuniTheme.espresso)
-                if item.englishName != item.originalName {
+                if item.hasDistinctEnglishName {
                     Text(item.englishName).font(.title3.weight(.semibold))
                 }
                 Text(item.explanation).lineSpacing(4)
@@ -1052,7 +1306,7 @@ private struct MenuItemDetailView: View {
                 Text(item.originalName)
                     .font(.system(.largeTitle, design: .serif, weight: .bold))
                     .foregroundStyle(VemuniTheme.espresso)
-                if item.englishName != item.originalName {
+                if item.hasDistinctEnglishName {
                     Text(item.englishName).font(.title3.weight(.semibold))
                 }
                 Text(item.explanation).font(.body).lineSpacing(4)

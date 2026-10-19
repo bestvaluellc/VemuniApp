@@ -157,22 +157,35 @@ private struct SavedScanRow: View {
                 Text(visit.title)
                     .font(.headline)
                     .foregroundStyle(VemuniTheme.espresso)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(visit.isReceipt ? "Bill" : visit.pageDescription)
                     .lineLimit(1)
 
-                HStack(spacing: 5) {
-                    Text(visit.isReceipt ? "Bill" : visit.pageDescription)
-                    if let createdAt = visit.createdAt {
-                        Text("•")
-                        Text(createdAt, format: .dateTime.month(.abbreviated).day().year())
-                    }
-                    if !visit.menuPicks.isEmpty {
-                        Text("•")
-                        Text("\(visit.menuPicks.count) \(visit.menuPicks.count == 1 ? "pick" : "picks")")
-                    }
+                if !visit.dateAndPicksDescription.isEmpty {
+                    Text(visit.dateAndPicksDescription)
+                        .lineLimit(1)
                 }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+
+#if DEBUG
+                if let totalTokens = visit.result.aiUsage?.totalTokens {
+                    HStack(spacing: 5) {
+                        Text("AI tokens")
+                        Text(totalTokens.formatted())
+                            .fontWeight(.semibold)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(VemuniTheme.sage)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("AI tokens, \(totalTokens)")
+                }
+#endif
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 5)
     }
@@ -199,6 +212,17 @@ private extension SavedVisitRecord {
         default: label = "Menu"
         }
         return pageCount == 1 ? label : "\(label) · \(pageCount) pages"
+    }
+
+    var dateAndPicksDescription: String {
+        var values: [String] = []
+        if let createdAt {
+            values.append(createdAt.formatted(.dateTime.month(.abbreviated).day().year()))
+        }
+        if !menuPicks.isEmpty {
+            values.append("\(menuPicks.count) \(menuPicks.count == 1 ? "pick" : "picks")")
+        }
+        return values.joined(separator: " · ")
     }
 
     var scanSymbol: String {
