@@ -20,7 +20,7 @@ enum ScanServiceError: LocalizedError {
 }
 
 struct ScanService {
-    func analyze(image: UIImage, mode: ScanMode) async throws -> VemuniScanResult {
+    func analyze(images: [UIImage], mode: ScanMode) async throws -> VemuniScanResult {
         guard
             let endpoint = Bundle.main.object(forInfoDictionaryKey: "VEMUNI_SCAN_ENDPOINT") as? String,
             !endpoint.isEmpty,
@@ -28,7 +28,10 @@ struct ScanService {
             let url = URL(string: endpoint)
         else { throw ScanServiceError.missingEndpoint }
 
-        guard let imageData = image.vemuniUploadData() else {
+        let imagePayloads = images.compactMap { image in
+            image.vemuniUploadData(maxDimension: images.count > 1 ? 1600 : 1800)?.base64EncodedString()
+        }
+        guard imagePayloads.count == images.count, !imagePayloads.isEmpty else {
             throw ScanServiceError.imageEncoding
         }
 
@@ -43,7 +46,7 @@ struct ScanService {
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(ScanRequest(
             mode: mode.rawValue,
-            imageBase64: imageData.base64EncodedString()
+            imagesBase64: imagePayloads
         ))
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -61,7 +64,7 @@ struct ScanService {
 
 private struct ScanRequest: Encodable {
     let mode: String
-    let imageBase64: String
+    let imagesBase64: [String]
 }
 
 private struct ServerError: Decodable {

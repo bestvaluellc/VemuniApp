@@ -17,7 +17,11 @@ struct HomeView: View {
                             VemuniWordmark()
                             Spacer()
                             Menu {
-                                if let email = auth.user?.email { Text(email) }
+                                if auth.user?.isAnonymous == true {
+                                    Text("Guest")
+                                } else if let email = auth.user?.email {
+                                    Text(email)
+                                }
                                 Button("Sign Out", role: .destructive) { auth.signOut() }
                             } label: {
                                 Image(systemName: "person.crop.circle")
@@ -40,10 +44,37 @@ struct HomeView: View {
                         actionCard(for: .menu, prominent: true)
                         actionCard(for: .receipt, prominent: false)
 
+                        NavigationLink {
+                            SavedScansView()
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.title3.weight(.semibold))
+                                    .frame(width: 42, height: 42)
+                                    .background(VemuniTheme.cream)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Saved Scans")
+                                        .font(.headline)
+                                    Text("View your menus and bills")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(16)
+                            .foregroundStyle(VemuniTheme.espresso)
+                            .background(VemuniTheme.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                        }
+                        .buttonStyle(.plain)
+
                         HStack(spacing: 9) {
                             Image(systemName: "globe.americas.fill")
                                 .foregroundStyle(VemuniTheme.copper)
-                            Text("Automatically detects and translates supported languages")
+                            Text("Automatically detects food, wine, drinks, and supported languages")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -86,7 +117,7 @@ struct HomeView: View {
             }
             .padding(20)
             .foregroundStyle(prominent ? Color.white : VemuniTheme.espresso)
-            .background(prominent ? VemuniTheme.espresso : VemuniTheme.paper)
+            .background(prominent ? VemuniTheme.primaryAction : VemuniTheme.paper)
             .clipShape(RoundedRectangle(cornerRadius: 24))
             .shadow(color: .black.opacity(0.07), radius: 14, y: 6)
         }

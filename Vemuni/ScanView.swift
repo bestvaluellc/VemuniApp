@@ -7,18 +7,25 @@ struct ScanView: View {
     let mode: ScanMode
     let onSuccessfulScan: () -> Void
 
-    @State private var photoItem: PhotosPickerItem?
-    @State private var image: UIImage?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var images: [UIImage] = []
     @State private var showCamera = false
     @State private var isAnalyzing = false
     @State private var result: VemuniScanResult?
+    @State private var saveState: ScanSaveState?
+    @State private var savedVisitID: String?
     @State private var errorMessage: String?
 
     var body: some View {
         NavigationStack {
             Group {
                 if let result {
-                    ResultsView(result: result)
+                    ResultsView(
+                        result: result,
+                        saveState: saveState,
+                        receiptImage: mode == .receipt ? images.first : nil,
+                        savedVisitID: savedVisitID
+                    )
                 } else {
                     scanner
                 }
@@ -33,18 +40,33 @@ struct ScanView: View {
             }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { selected in
-                    image = selected
+                    if mode == .menu {
+                        if images.count < maximumPageCount { images.append(selected) }
+                    } else {
+                        images = [selected]
+                    }
                     VemuniAnalytics.photoSelected(mode: mode, source: "camera")
                 }
                     .ignoresSafeArea()
             }
-            .onChange(of: photoItem) { _, item in
-                guard let item else { return }
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
                 Task {
-                    guard let data = try? await item.loadTransferable(type: Data.self),
-                          let selected = UIImage(data: data) else { return }
-                    image = selected
-                    VemuniAnalytics.photoSelected(mode: mode, source: "photo_library")
+                    var selectedImages: [UIImage] = []
+                    for item in items.prefix(maximumPageCount) {
+                        guard let data = try? await item.loadTransferable(type: Data.self),
+                              let selected = UIImage(data: data) else { continue }
+                        selectedImages.append(selected)
+                    }
+                    if mode == .menu {
+                        images.append(contentsOf: selectedImages.prefix(maximumPageCount - images.count))
+                    } else if let selected = selectedImages.first {
+                        images = [selected]
+                    }
+                    photoItems = []
+                    if !selectedImages.isEmpty {
+                        VemuniAnalytics.photoSelected(mode: mode, source: "photo_library")
+                    }
                 }
             }
             .onAppear { VemuniAnalytics.screen(mode == .menu ? "menu_scan" : "receipt_scan") }
@@ -54,18 +76,19 @@ struct ScanView: View {
     private var scanner: some View {
         ScrollView {
             VStack(spacing: 22) {
-                if let image {
+                if let image = images.last {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 390)
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                         .overlay { RoundedRectangle(cornerRadius: 22).stroke(.white, lineWidth: 3) }
+                    if mode == .menu { pageStrip }
                 } else {
                     scanGuide
                 }
 
-                if image == nil {
+                if images.isEmpty {
                     Button {
                         showCamera = true
                     } label: {
@@ -75,24 +98,56 @@ struct ScanView: View {
                     .buttonStyle(VemuniPrimaryButtonStyle())
                     .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
 
-                    PhotosPicker(selection: $photoItem, matching: .images) {
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: maximumPageCount, matching: .images) {
                         Label("Choose from Photos", systemImage: "photo.on.rectangle")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+
+                    if mode == .menu {
+                        Text("Up to \(maximumPageCount) pages per menu scan")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
+                    if mode == .menu && images.count < maximumPageCount {
+                        HStack(spacing: 12) {
+                            Button { showCamera = true } label: {
+                                compactActionLabel("Add Page", systemImage: "camera.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+
+                            PhotosPicker(
+                                selection: $photoItems,
+                                maxSelectionCount: maximumPageCount - images.count,
+                                matching: .images
+                            ) {
+                                compactActionLabel("Add Photos", systemImage: "photo.on.rectangle")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .controlSize(.large)
+                        .disabled(isAnalyzing)
+                    }
+
                     Button { analyze() } label: {
                         HStack {
                             if isAnalyzing { ProgressView().tint(.white) }
-                            Label(isAnalyzing ? "Reading…" : mode.title, systemImage: "sparkles")
+                            Label(analyzeButtonTitle, systemImage: "sparkles")
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(VemuniPrimaryButtonStyle())
                     .disabled(isAnalyzing)
 
-                    Button("Use a different photo") { image = nil; errorMessage = nil }
+                    Button(mode == .menu ? "Start over" : "Use a different photo") {
+                        images.removeAll()
+                        saveState = nil
+                        errorMessage = nil
+                    }
                         .disabled(isAnalyzing)
                 }
 
@@ -104,7 +159,7 @@ struct ScanView: View {
                 }
 
                 Text(mode == .menu
-                     ? "Vemuni identifies the language, translates dishes, and explains unfamiliar ingredients."
+                     ? "Vemuni identifies food, wine, and drinks, translates menu text, and explains unfamiliar items."
                      : "Vemuni checks totals, identifies service charges, and helps prevent accidental double tipping.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -112,6 +167,70 @@ struct ScanView: View {
             }
             .padding(20)
         }
+    }
+
+    private var maximumPageCount: Int { mode == .menu ? 8 : 1 }
+
+    private func compactActionLabel(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .font(.subheadline.weight(.semibold))
+    }
+
+    private var analyzeButtonTitle: String {
+        if isAnalyzing {
+            return images.count > 1 ? "Reading \(images.count) pages…" : "Reading…"
+        }
+        return mode == .menu && images.count > 1 ? "Read \(images.count) Pages" : mode.title
+    }
+
+    private var pageStrip: some View {
+        VStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(images.enumerated()), id: \.offset) { index, image in
+                        ZStack(alignment: .topTrailing) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 76, height: 96)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .overlay(alignment: .bottomLeading) {
+                                    Text("Page \(index + 1)")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .padding(6)
+                                        .background(.black.opacity(0.55))
+                                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                                        .padding(5)
+                                }
+                            Button {
+                                images.remove(at: index)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.white, Color.black.opacity(0.65))
+                            }
+                            .offset(x: 5, y: -5)
+                            .disabled(isAnalyzing)
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
+            }
+
+            Text(images.count == maximumPageCount
+                 ? "Maximum of \(maximumPageCount) pages reached"
+                 : "\(images.count) of \(maximumPageCount) pages selected")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(images.count == maximumPageCount ? VemuniTheme.copper : Color.secondary)
+        }
+        .accessibilityLabel("\(images.count) menu pages selected")
     }
 
     private var scanGuide: some View {
@@ -134,18 +253,28 @@ struct ScanView: View {
     }
 
     private func analyze() {
-        guard let image else { return }
+        guard !images.isEmpty else { return }
         errorMessage = nil
         isAnalyzing = true
         VemuniAnalytics.scanStarted(mode: mode)
         Task {
             do {
-                let value = try await ScanService().analyze(image: image, mode: mode)
+                let value = try await ScanService().analyze(images: images, mode: mode)
                 await MainActor.run {
                     result = value
+                    saveState = .saving
                     isAnalyzing = false
                     VemuniAnalytics.scanCompleted(mode: mode, result: value)
                     onSuccessfulScan()
+                }
+                do {
+                    let savedVisit = try await VisitStorageService().save(result: value, sourceImages: images)
+                    await MainActor.run {
+                        savedVisitID = savedVisit.id
+                        saveState = .saved
+                    }
+                } catch {
+                    await MainActor.run { saveState = .failed(error.localizedDescription) }
                 }
             } catch {
                 await MainActor.run {
@@ -165,7 +294,7 @@ struct VemuniPrimaryButtonStyle: ButtonStyle {
             .padding(.vertical, 15)
             .padding(.horizontal, 18)
             .foregroundStyle(.white)
-            .background(VemuniTheme.espresso.opacity(configuration.isPressed ? 0.8 : 1))
+            .background(VemuniTheme.primaryAction.opacity(configuration.isPressed ? 0.8 : 1))
             .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
