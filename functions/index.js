@@ -49,6 +49,7 @@ exports.analyzeDiningPhoto = onRequest(
       const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
       const aiResponse = await openai.responses.create({
         model: OPENAI_MODEL,
+		reasoning: { effort: "low" },
         input: [
           {
             role: "developer",

@@ -9,6 +9,7 @@ struct ScanView: View {
 
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var images: [UIImage] = []
+    @State private var selectedPageIndex = 0
     @State private var showCamera = false
     @State private var isAnalyzing = false
     @State private var result: VemuniScanResult?
@@ -41,9 +42,13 @@ struct ScanView: View {
             .sheet(isPresented: $showCamera) {
                 CameraPicker { selected in
                     if mode == .menu {
-                        if images.count < maximumPageCount { images.append(selected) }
+                        if images.count < maximumPageCount {
+                            images.append(selected)
+                            selectedPageIndex = images.count - 1
+                        }
                     } else {
                         images = [selected]
+                        selectedPageIndex = 0
                     }
                     VemuniAnalytics.photoSelected(mode: mode, source: "camera")
                 }
@@ -60,8 +65,12 @@ struct ScanView: View {
                     }
                     if mode == .menu {
                         images.append(contentsOf: selectedImages.prefix(maximumPageCount - images.count))
+                        if !selectedImages.isEmpty {
+                            selectedPageIndex = images.count - 1
+                        }
                     } else if let selected = selectedImages.first {
                         images = [selected]
+                        selectedPageIndex = 0
                     }
                     photoItems = []
                     if !selectedImages.isEmpty {
@@ -76,13 +85,15 @@ struct ScanView: View {
     private var scanner: some View {
         ScrollView {
             VStack(spacing: 22) {
-                if let image = images.last {
+                if let image = selectedPageImage {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 390)
                         .clipShape(RoundedRectangle(cornerRadius: 22))
                         .overlay { RoundedRectangle(cornerRadius: 22).stroke(.white, lineWidth: 3) }
+                        .id(selectedPageIndex)
+                        .transition(.opacity)
                     if mode == .menu { pageStrip }
                 } else {
                     scanGuide
@@ -145,6 +156,7 @@ struct ScanView: View {
 
                     Button(mode == .menu ? "Start over" : "Use a different photo") {
                         images.removeAll()
+                        selectedPageIndex = 0
                         saveState = nil
                         errorMessage = nil
                     }
@@ -171,6 +183,11 @@ struct ScanView: View {
 
     private var maximumPageCount: Int { mode == .menu ? 8 : 1 }
 
+    private var selectedPageImage: UIImage? {
+        guard images.indices.contains(selectedPageIndex) else { return images.last }
+        return images[selectedPageIndex]
+    }
+
     private func compactActionLabel(_ title: String, systemImage: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: systemImage)
@@ -194,22 +211,48 @@ struct ScanView: View {
                 HStack(spacing: 10) {
                     ForEach(Array(images.enumerated()), id: \.offset) { index, image in
                         ZStack(alignment: .topTrailing) {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 76, height: 96)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(alignment: .bottomLeading) {
-                                    Text("Page \(index + 1)")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(.white)
-                                        .padding(6)
-                                        .background(.black.opacity(0.55))
-                                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                                        .padding(5)
+                            Button {
+                                guard selectedPageIndex != index else { return }
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    selectedPageIndex = index
                                 }
+                            } label: {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 76, height: 96)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(alignment: .bottomLeading) {
+                                        Text("Page \(index + 1)")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.white)
+                                            .padding(6)
+                                            .background(.black.opacity(0.55))
+                                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                                            .padding(5)
+                                    }
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(
+                                                index == selectedPageIndex ? VemuniTheme.primaryAction : .clear,
+                                                lineWidth: 3
+                                            )
+                                    }
+                                    .contentShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Page \(index + 1)")
+                            .accessibilityAddTraits(index == selectedPageIndex ? .isSelected : [])
+
                             Button {
                                 images.remove(at: index)
+                                if images.isEmpty {
+                                    selectedPageIndex = 0
+                                } else if index < selectedPageIndex {
+                                    selectedPageIndex -= 1
+                                } else if selectedPageIndex >= images.count {
+                                    selectedPageIndex = images.count - 1
+                                }
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .symbolRenderingMode(.palette)
@@ -217,6 +260,7 @@ struct ScanView: View {
                             }
                             .offset(x: 5, y: -5)
                             .disabled(isAnalyzing)
+                            .accessibilityLabel("Remove page \(index + 1)")
                         }
                     }
                 }
