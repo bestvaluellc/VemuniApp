@@ -23,7 +23,9 @@ struct HomeView: View {
                                 } else if let email = auth.user?.email {
                                     Text(email)
                                 }
+
                                 Button("Vemuni Plus") { showingPaywall = true }
+
                                 Button("Sign Out", role: .destructive) { auth.signOut() }
                             } label: {
                                 Image(systemName: "person.crop.circle")

@@ -30,6 +30,7 @@ exports.analyzeDiningPhoto = onRequest(
     const requestedImages = Array.isArray(request.body?.imagesBase64) ? request.body.imagesBase64 : [];
     const imagesBase64 = (requestedImages.length ? requestedImages : [legacyImage]).map(String).filter(Boolean);
     const totalImageBytes = imagesBase64.reduce((total, image) => total + image.length, 0);
+
     if (!imagesBase64.length || imagesBase64.length > MAXIMUM_PAGE_COUNT || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
       response.status(400).json({ error: "Add between one and six clear menu pages and try again." });
       return;
