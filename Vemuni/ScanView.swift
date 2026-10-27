@@ -181,7 +181,7 @@ struct ScanView: View {
         }
     }
 
-    private var maximumPageCount: Int { mode == .menu ? 8 : 1 }
+    private var maximumPageCount: Int { mode == .menu ? 6 : 1 }
 
     private var selectedPageImage: UIImage? {
         guard images.indices.contains(selectedPageIndex) else { return images.last }

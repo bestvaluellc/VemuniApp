@@ -4,6 +4,7 @@ import FirebaseCore
 @main
 struct VemuniApp: App {
     @StateObject private var auth = AuthViewModel()
+    @StateObject private var subscriptionStore = SubscriptionStore()
 
     init() {
         FirebaseApp.configure()
@@ -13,6 +14,7 @@ struct VemuniApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(auth)
+                .environmentObject(subscriptionStore)
                 .tint(VemuniTheme.copper)
         }
     }
@@ -20,6 +22,7 @@ struct VemuniApp: App {
 
 private struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
 
     var body: some View {
         Group {
@@ -32,6 +35,13 @@ private struct RootView: View {
                 AuthView()
             } else {
                 HomeView()
+            }
+        }
+        .task(id: auth.user?.uid) {
+            if let userID = auth.user?.uid {
+                await subscriptionStore.identify(firebaseUserID: userID)
+            } else {
+                await subscriptionStore.clearIdentity()
             }
         }
     }

@@ -7,7 +7,8 @@ admin.initializeApp();
 
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 const OPENAI_MODEL = "gpt-5.4-mini";
-const INTRODUCTORY_SCANS = 10;
+const INTRODUCTORY_SCANS = 5;
+const MAXIMUM_PAGE_COUNT = 6;
 
 exports.analyzeDiningPhoto = onRequest(
   {
@@ -29,8 +30,8 @@ exports.analyzeDiningPhoto = onRequest(
     const requestedImages = Array.isArray(request.body?.imagesBase64) ? request.body.imagesBase64 : [];
     const imagesBase64 = (requestedImages.length ? requestedImages : [legacyImage]).map(String).filter(Boolean);
     const totalImageBytes = imagesBase64.reduce((total, image) => total + image.length, 0);
-    if (!imagesBase64.length || imagesBase64.length > 8 || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
-      response.status(400).json({ error: "Add between one and eight clear menu pages and try again." });
+    if (!imagesBase64.length || imagesBase64.length > MAXIMUM_PAGE_COUNT || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
+      response.status(400).json({ error: "Add between one and six clear menu pages and try again." });
       return;
     }
 
@@ -42,14 +43,14 @@ exports.analyzeDiningPhoto = onRequest(
       }
       const allowance = await scanAllowance(user.uid);
       if (!allowance.allowed) {
-        response.status(429).json({ error: "Your free scan for today has been used. Try again tomorrow." });
+        response.status(429).json({ error: "You’ve used your five free scans. Upgrade to Vemuni Plus to continue." });
         return;
       }
 
       const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
       const aiResponse = await openai.responses.create({
         model: OPENAI_MODEL,
-		reasoning: { effort: "low" },
+        reasoning: { effort: "low" },
         input: [
           {
             role: "developer",
@@ -111,7 +112,7 @@ function systemPrompt(mode) {
   }
   return `${common}\nThis is a restaurant menu that may contain food, wine, cocktails, beer, other drinks, or a mixture, across multiple pages that may be supplied in any order. Combine all pages into one menu and remove only exact duplicates caused by overlapping photos. Preserve the printed item order within each section, but arrange sections in a natural dining order: appetizers and starters, soups, salads, entrees and mains, sides, desserts, non-alcoholic drinks and mocktails, cocktails, beer, spirits, then wine. Classify the overall menuType and every section and item. Do not merge distinct items merely because their names are similar.
 
-For food: explain the dish in plain English, including cooking style and important ingredients only when reasonably supported by visible text. Translate foreign descriptions naturally and explain unfamiliar culinary terms. If an item name is already English, set englishName exactly equal to originalName; do not paraphrase it, change capitalization, split compound words, or append a category such as salad, soup, appetizer, entree, or dessert. Put helpful clarification in explanation instead. Only make englishName different when an actual translation is needed.
+For food: explain the dish in plain English, including cooking style and important ingredients only when reasonably supported by visible text. Keep every explanation concise: one short sentence of no more than 18 words. Translate foreign descriptions naturally and explain unfamiliar culinary terms. If an item name is already English, set englishName exactly equal to originalName; do not paraphrase it, change capitalization, split compound words, or append a category such as salad, soup, appetizer, entree, or dessert. Put helpful clarification in explanation instead. Only make englishName different when an actual translation is needed.
 
 Classify an item from what the item itself is, not from ingredients mentioned in its description. A food dish cooked with wine, beer, spirits, coffee, or tea remains food and must not be classified as a drink.
 
@@ -270,18 +271,17 @@ async function scanAllowance(uid) {
   const snapshot = await ref.get();
   const data = snapshot.data() || {};
   const introductoryUsed = Number(data.introductoryUsed || 0);
-  const today = new Date().toISOString().slice(0, 10);
 
   // Client access to vemuniUsers is denied by Firestore rules, so only an
   // administrator can grant this internal testing allowance.
   if (data.unlimitedTestScans === true) {
-    return { allowed: true, type: "tester", introductoryUsed, today };
+    return { allowed: true, type: "tester", introductoryUsed };
   }
 
   if (introductoryUsed < INTRODUCTORY_SCANS) {
-    return { allowed: true, type: "introductory", introductoryUsed, today };
+    return { allowed: true, type: "introductory", introductoryUsed };
   }
-  return { allowed: data.lastDailyScanDay !== today, type: "daily", introductoryUsed, today };
+  return { allowed: false, type: "exhausted", introductoryUsed };
 }
 
 function normalizedUsage(usage) {
@@ -322,8 +322,6 @@ async function recordSuccessfulScan(uid, allowance, scanMetrics) {
   };
   if (allowance.type === "introductory") {
     update.introductoryUsed = admin.firestore.FieldValue.increment(1);
-  } else if (allowance.type === "daily") {
-    update.lastDailyScanDay = allowance.today;
   }
   const batch = admin.firestore().batch();
   batch.set(ref, update, { merge: true });

@@ -1,11 +1,15 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {};
+	classes = {
+	};
 	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		900E16D93090E23D00C106AF /* SubscriptionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900E16D83090E23D00C106AF /* SubscriptionStore.swift */; };
+		900E16DA3090E23D00C106AF /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900E16D73090E23D00C106AF /* PaywallView.swift */; };
+		900E16DD3090E6AC00C106AF /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 900E16DC3090E6AC00C106AF /* RevenueCat */; };
 		A10000000000000000000001 /* VemuniApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* VemuniApp.swift */; };
 		A10000000000000000000002 /* VemuniTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* VemuniTheme.swift */; };
 		A10000000000000000000003 /* ScanModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ScanModels.swift */; };
@@ -26,10 +30,14 @@
 		A10000000000000000000018 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000003 /* GoogleSignIn */; };
 		A10000000000000000000019 /* AnalyticsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* AnalyticsService.swift */; };
 		A10000000000000000000020 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000004 /* FirebaseAnalytics */; };
+		A10000000000000000000021 /* VisitStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000020 /* VisitStorageService.swift */; };
+		A10000000000000000000022 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000005 /* FirebaseFirestore */; };
+		A10000000000000000000023 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = P10000000000000000000006 /* FirebaseStorage */; };
+		A10000000000000000000024 /* SavedScansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000021 /* SavedScansView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		C10000000000000000000001 = {
+		C10000000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = D10000000000000000000001 /* Project object */;
 			proxyType = 1;
@@ -44,13 +52,17 @@
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 16;
-			files = (A10000000000000000000012 /* Vemuni.app in Embed */, );
-			name = "Embed";
+			files = (
+				A10000000000000000000012 /* Vemuni.app in Embed */,
+			);
+			name = Embed;
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		900E16D73090E23D00C106AF /* PaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallView.swift; sourceTree = "<group>"; };
+		900E16D83090E23D00C106AF /* SubscriptionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionStore.swift; sourceTree = "<group>"; };
 		B10000000000000000000001 /* VemuniApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VemuniApp.swift; sourceTree = "<group>"; };
 		B10000000000000000000002 /* VemuniTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VemuniTheme.swift; sourceTree = "<group>"; };
 		B10000000000000000000003 /* ScanModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanModels.swift; sourceTree = "<group>"; };
@@ -70,11 +82,33 @@
 		B10000000000000000000017 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		B10000000000000000000018 /* Vemuni.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Vemuni.entitlements; sourceTree = "<group>"; };
 		B10000000000000000000019 /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
+		B10000000000000000000020 /* VisitStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisitStorageService.swift; sourceTree = "<group>"; };
+		B10000000000000000000021 /* SavedScansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedScansView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		F10000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000016, A10000000000000000000017, A10000000000000000000018, A10000000000000000000020, ); runOnlyForDeploymentPostprocessing = 0; };
-		F10000000000000000000005 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000011 /* XCTest.framework in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000016 /* FirebaseCore in Frameworks */,
+				A10000000000000000000017 /* FirebaseAuth in Frameworks */,
+				900E16DD3090E6AC00C106AF /* RevenueCat in Frameworks */,
+				A10000000000000000000018 /* GoogleSignIn in Frameworks */,
+				A10000000000000000000020 /* FirebaseAnalytics in Frameworks */,
+				A10000000000000000000022 /* FirebaseFirestore in Frameworks */,
+				A10000000000000000000023 /* FirebaseStorage in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000011 /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -91,45 +125,99 @@
 		G10000000000000000000002 /* Vemuni */ = {
 			isa = PBXGroup;
 			children = (
-				B10000000000000000000001, B10000000000000000000002,
-				B10000000000000000000003, B10000000000000000000004,
-				B10000000000000000000005, B10000000000000000000006,
-				B10000000000000000000007, B10000000000000000000008,
-				B10000000000000000000015, B10000000000000000000016,
-				B10000000000000000000019,
-				B10000000000000000000009, B10000000000000000000010,
-				B10000000000000000000017, B10000000000000000000018,
+				900E16D73090E23D00C106AF /* PaywallView.swift */,
+				900E16D83090E23D00C106AF /* SubscriptionStore.swift */,
+				B10000000000000000000001 /* VemuniApp.swift */,
+				B10000000000000000000002 /* VemuniTheme.swift */,
+				B10000000000000000000003 /* ScanModels.swift */,
+				B10000000000000000000004 /* HomeView.swift */,
+				B10000000000000000000005 /* ImagePicker.swift */,
+				B10000000000000000000006 /* ScanService.swift */,
+				B10000000000000000000007 /* ScanView.swift */,
+				B10000000000000000000008 /* ResultsView.swift */,
+				B10000000000000000000015 /* AuthViewModel.swift */,
+				B10000000000000000000016 /* AuthView.swift */,
+				B10000000000000000000019 /* AnalyticsService.swift */,
+				B10000000000000000000020 /* VisitStorageService.swift */,
+				B10000000000000000000021 /* SavedScansView.swift */,
+				B10000000000000000000009 /* Assets.xcassets */,
+				B10000000000000000000010 /* Info.plist */,
+				B10000000000000000000017 /* GoogleService-Info.plist */,
+				B10000000000000000000018 /* Vemuni.entitlements */,
 			);
 			path = Vemuni;
 			sourceTree = "<group>";
 		};
-		G10000000000000000000003 /* VemuniTests */ = {isa = PBXGroup; children = (B10000000000000000000011, ); path = VemuniTests; sourceTree = "<group>"; };
-		G10000000000000000000004 /* Frameworks */ = {isa = PBXGroup; children = (B10000000000000000000013, ); name = Frameworks; sourceTree = "<group>"; };
-		G10000000000000000000005 /* Products */ = {isa = PBXGroup; children = (B10000000000000000000012, B10000000000000000000014, ); name = Products; sourceTree = "<group>"; };
+		G10000000000000000000003 /* VemuniTests */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000011 /* VemuniTests.swift */,
+			);
+			path = VemuniTests;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000004 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000013 /* XCTest.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		G10000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B10000000000000000000012 /* Vemuni.app */,
+				B10000000000000000000014 /* VemuniTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
 		E10000000000000000000001 /* Vemuni */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = H10000000000000000000002;
-			buildPhases = (F10000000000000000000001, F10000000000000000000002, F10000000000000000000003, );
-			buildRules = ();
-			dependencies = ();
+			buildConfigurationList = H10000000000000000000002 /* Build configuration list for PBXNativeTarget "Vemuni" */;
+			buildPhases = (
+				F10000000000000000000001 /* Sources */,
+				F10000000000000000000002 /* Frameworks */,
+				F10000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
 			name = Vemuni;
-			packageProductDependencies = (P10000000000000000000001, P10000000000000000000002, P10000000000000000000003, P10000000000000000000004, );
+			packageProductDependencies = (
+				P10000000000000000000001 /* FirebaseCore */,
+				P10000000000000000000002 /* FirebaseAuth */,
+				P10000000000000000000003 /* GoogleSignIn */,
+				P10000000000000000000004 /* FirebaseAnalytics */,
+				P10000000000000000000005 /* FirebaseFirestore */,
+				P10000000000000000000006 /* FirebaseStorage */,
+				900E16DC3090E6AC00C106AF /* RevenueCat */,
+			);
 			productName = Vemuni;
-			productReference = B10000000000000000000012;
+			productReference = B10000000000000000000012 /* Vemuni.app */;
 			productType = "com.apple.product-type.application";
 		};
 		E10000000000000000000002 /* VemuniTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = H10000000000000000000003;
-			buildPhases = (F10000000000000000000004, F10000000000000000000005, F10000000000000000000006, );
-			buildRules = ();
-			dependencies = (I10000000000000000000001, );
+			buildConfigurationList = H10000000000000000000003 /* Build configuration list for PBXNativeTarget "VemuniTests" */;
+			buildPhases = (
+				F10000000000000000000004 /* Sources */,
+				F10000000000000000000005 /* Frameworks */,
+				F10000000000000000000006 /* Embed */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				I10000000000000000000001 /* PBXTargetDependency */,
+			);
 			name = VemuniTests;
 			productName = VemuniTests;
-			productReference = B10000000000000000000014;
+			productReference = B10000000000000000000014 /* VemuniTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -142,110 +230,293 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
-					E10000000000000000000001 = {CreatedOnToolsVersion = 26.0; };
-					E10000000000000000000002 = {CreatedOnToolsVersion = 26.0; TestTargetID = E10000000000000000000001; };
+					E10000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					E10000000000000000000002 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = E10000000000000000000001;
+					};
 				};
 			};
-			buildConfigurationList = H10000000000000000000001;
+			buildConfigurationList = H10000000000000000000001 /* Build configuration list for PBXProject "Vemuni" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
-			knownRegions = (en, Base, );
+			knownRegions = (
+				en,
+				Base,
+			);
 			mainGroup = G10000000000000000000001;
-			packageReferences = (K10000000000000000000001 /* firebase-ios-sdk */, K10000000000000000000002 /* GoogleSignIn-iOS */, );
-			productRefGroup = G10000000000000000000005;
+			packageReferences = (
+				K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				K10000000000000000000002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				900E16DB3090E6AC00C106AF /* XCRemoteSwiftPackageReference "purchases-ios" */,
+			);
+			productRefGroup = G10000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-			targets = (E10000000000000000000001, E10000000000000000000002, );
+			targets = (
+				E10000000000000000000001 /* Vemuni */,
+				E10000000000000000000002 /* VemuniTests */,
+			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		F10000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000009, A10000000000000000000015, ); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000009 /* Assets.xcassets in Resources */,
+				A10000000000000000000015 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		F10000000000000000000001 = {
-			isa = PBXSourcesBuildPhase; buildActionMask = 2147483647;
-			files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000003, A10000000000000000000004, A10000000000000000000005, A10000000000000000000006, A10000000000000000000007, A10000000000000000000008, A10000000000000000000013, A10000000000000000000014, A10000000000000000000019, );
+		F10000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* VemuniApp.swift in Sources */,
+				A10000000000000000000002 /* VemuniTheme.swift in Sources */,
+				A10000000000000000000003 /* ScanModels.swift in Sources */,
+				A10000000000000000000004 /* HomeView.swift in Sources */,
+				A10000000000000000000005 /* ImagePicker.swift in Sources */,
+				A10000000000000000000006 /* ScanService.swift in Sources */,
+				A10000000000000000000007 /* ScanView.swift in Sources */,
+				A10000000000000000000008 /* ResultsView.swift in Sources */,
+				A10000000000000000000013 /* AuthViewModel.swift in Sources */,
+				A10000000000000000000014 /* AuthView.swift in Sources */,
+				A10000000000000000000019 /* AnalyticsService.swift in Sources */,
+				A10000000000000000000021 /* VisitStorageService.swift in Sources */,
+				A10000000000000000000024 /* SavedScansView.swift in Sources */,
+				900E16D93090E23D00C106AF /* SubscriptionStore.swift in Sources */,
+				900E16DA3090E23D00C106AF /* PaywallView.swift in Sources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		F10000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000010, ); runOnlyForDeploymentPostprocessing = 0; };
+		F10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000010 /* VemuniTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		I10000000000000000000001 = {isa = PBXTargetDependency; target = E10000000000000000000001; targetProxy = C10000000000000000000001; };
+		I10000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E10000000000000000000001 /* Vemuni */;
+			targetProxy = C10000000000000000000001 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		J10000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; ENABLE_TESTABILITY = YES; GCC_OPTIMIZATION_LEVEL = 0; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
-		J10000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; VALIDATE_PRODUCT = YES; }; name = Release; };
-		J10000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
-			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-			CODE_SIGN_ENTITLEMENTS = Vemuni/Vemuni.entitlements;
-			CODE_SIGN_STYLE = Automatic;
-			CURRENT_PROJECT_VERSION = 1;
-			DEVELOPMENT_TEAM = "";
-			GENERATE_INFOPLIST_FILE = NO;
-			INFOPLIST_FILE = Vemuni/Info.plist;
-			IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-			MARKETING_VERSION = 1.0;
-			PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni;
-			PRODUCT_NAME = "$(TARGET_NAME)";
-			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-			SUPPORTS_MACCATALYST = NO;
-			SWIFT_EMIT_LOC_STRINGS = YES;
-			SWIFT_VERSION = 5.0;
-			TARGETED_DEVICE_FAMILY = 1;
-		}; name = Debug; };
-		J10000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
-			ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-			CODE_SIGN_ENTITLEMENTS = Vemuni/Vemuni.entitlements;
-			CODE_SIGN_STYLE = Automatic;
-			CURRENT_PROJECT_VERSION = 1;
-			DEVELOPMENT_TEAM = "";
-			GENERATE_INFOPLIST_FILE = NO;
-			INFOPLIST_FILE = Vemuni/Info.plist;
-			IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-			LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-			MARKETING_VERSION = 1.0;
-			PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni;
-			PRODUCT_NAME = "$(TARGET_NAME)";
-			SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-			SUPPORTS_MACCATALYST = NO;
-			SWIFT_EMIT_LOC_STRINGS = YES;
-			SWIFT_VERSION = 5.0;
-			TARGETED_DEVICE_FAMILY = 1;
-		}; name = Release; };
-		J10000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vemuni.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vemuni"; }; name = Debug; };
-		J10000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vemuni.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vemuni"; }; name = Release; };
+		J10000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		J10000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		J10000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Vemuni/Vemuni.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DR8YJSFM73;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Vemuni/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		J10000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Vemuni/Vemuni.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DR8YJSFM73;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Vemuni/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		J10000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vemuni.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vemuni";
+			};
+			name = Debug;
+		};
+		J10000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = bestvaluellc.apps.vemuni.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Vemuni.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Vemuni";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		H10000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (J10000000000000000000001, J10000000000000000000002, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		H10000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (J10000000000000000000003, J10000000000000000000004, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		H10000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (J10000000000000000000005, J10000000000000000000006, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		H10000000000000000000001 /* Build configuration list for PBXProject "Vemuni" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10000000000000000000001 /* Debug */,
+				J10000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		H10000000000000000000002 /* Build configuration list for PBXNativeTarget "Vemuni" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10000000000000000000003 /* Debug */,
+				J10000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		H10000000000000000000003 /* Build configuration list for PBXNativeTarget "VemuniTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				J10000000000000000000005 /* Debug */,
+				J10000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		K10000000000000000000001 /* firebase-ios-sdk */ = {
+		900E16DB3090E6AC00C106AF /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.99.0;
+			};
+		};
+		K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
-			requirement = { kind = upToNextMajorVersion; minimumVersion = 11.0.0; };
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
 		};
-		K10000000000000000000002 /* GoogleSignIn-iOS */ = {
+		K10000000000000000000002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
-			requirement = { kind = upToNextMajorVersion; minimumVersion = 9.0.0; };
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		P10000000000000000000001 /* FirebaseCore */ = {isa = XCSwiftPackageProductDependency; package = K10000000000000000000001; productName = FirebaseCore; };
-		P10000000000000000000002 /* FirebaseAuth */ = {isa = XCSwiftPackageProductDependency; package = K10000000000000000000001; productName = FirebaseAuth; };
-		P10000000000000000000003 /* GoogleSignIn */ = {isa = XCSwiftPackageProductDependency; package = K10000000000000000000002; productName = GoogleSignIn; };
-		P10000000000000000000004 /* FirebaseAnalytics */ = {isa = XCSwiftPackageProductDependency; package = K10000000000000000000001; productName = FirebaseAnalytics; };
+		900E16DC3090E6AC00C106AF /* RevenueCat */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 900E16DB3090E6AC00C106AF /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
+		};
+		P10000000000000000000001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		P10000000000000000000002 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		P10000000000000000000003 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000002 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		P10000000000000000000004 /* FirebaseAnalytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalytics;
+		};
+		P10000000000000000000005 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		P10000000000000000000006 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D10000000000000000000001 /* Project object */;

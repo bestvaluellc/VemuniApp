@@ -2,9 +2,10 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var subscriptionStore: SubscriptionStore
     @State private var activeMode: ScanMode?
+    @State private var showingPaywall = false
     @AppStorage("vemuni.scanCount") private var scanCount = 0
-    @AppStorage("vemuni.lastFreeScanDay") private var lastFreeScanDay = ""
 
     var body: some View {
         NavigationStack {
@@ -22,6 +23,7 @@ struct HomeView: View {
                                 } else if let email = auth.user?.email {
                                     Text(email)
                                 }
+                                Button("Vemuni Plus") { showingPaywall = true }
                                 Button("Sign Out", role: .destructive) { auth.signOut() }
                             } label: {
                                 Image(systemName: "person.crop.circle")
@@ -94,11 +96,18 @@ struct HomeView: View {
                     markScanUsed()
                 }
             }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView()
+            }
         }
     }
 
     private func actionCard(for mode: ScanMode, prominent: Bool) -> some View {
         Button {
+            guard scanCount < 5 || subscriptionStore.isPlus else {
+                showingPaywall = true
+                return
+            }
             VemuniAnalytics.scanOpened(mode: mode)
             activeMode = mode
         } label: {
@@ -125,20 +134,15 @@ struct HomeView: View {
     }
 
     private var freeScanMessage: String {
-        if scanCount < 10 { return "\(10 - scanCount) free introductory scans remaining" }
-        return canUseDailyScan ? "Your free daily scan is ready" : "Come back tomorrow for another free scan"
-    }
-
-    private var canUseDailyScan: Bool {
-        lastFreeScanDay != Self.dayKey(Date())
+        if subscriptionStore.isPlus { return "Vemuni Plus · 30 scans per month" }
+        if scanCount < 5 {
+            let remaining = 5 - scanCount
+            return "\(remaining) free \(remaining == 1 ? "scan" : "scans") remaining"
+        }
+        return "Upgrade to Vemuni Plus for more scans"
     }
 
     private func markScanUsed() {
-        if scanCount < 10 { scanCount += 1 }
-        else { lastFreeScanDay = Self.dayKey(Date()) }
-    }
-
-    private static func dayKey(_ date: Date) -> String {
-        date.formatted(.iso8601.year().month().day())
+        if scanCount < 5 { scanCount += 1 }
     }
 }
