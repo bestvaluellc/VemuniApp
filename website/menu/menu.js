@@ -97,10 +97,11 @@ function menuCard(item, key) {
     titleWrap.append(translation);
   }
   top.append(titleWrap);
-  if (item.price) {
+  const displayedPrice = optionalText(item.price);
+  if (displayedPrice) {
     const price = document.createElement("strong");
     price.className = "shared-price";
-    price.textContent = item.price;
+    price.textContent = displayedPrice;
     top.append(price);
   }
   article.append(top);
@@ -190,6 +191,11 @@ function formatCurrency(value) {
 
 function normalize(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function optionalText(value) {
+  const text = String(value ?? "").trim();
+  return /^(null|undefined|n\/?a|none)$/i.test(text) ? "" : text;
 }
 
 loadMenu();
