@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="A restaurant menu shared with Vemuni.">
+  <title>Shared Menu — Vemuni</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="shared-menu-page">
+  <header class="shared-header">
+    <div class="shared-shell shared-nav">
+      <a class="brand" href="/" aria-label="Vemuni home"><span class="brand-mark" aria-hidden="true">V</span><span>Vemuni</span></a>
+      <span class="shared-badge">Shared menu</span>
+    </div>
+  </header>
+
+  <main class="shared-shell shared-main">
+    <section id="loading" class="shared-state" aria-live="polite">
+      <div class="shared-spinner" aria-hidden="true"></div>
+      <h1>Opening menu…</h1>
+      <p>Making it easier to read.</p>
+    </section>
+
+    <section id="error" class="shared-state" hidden>
+      <div class="shared-state-icon" aria-hidden="true">!</div>
+      <h1>Menu unavailable</h1>
+      <p id="error-message">This shared menu could not be opened.</p>
+      <a class="button" href="/">Learn about Vemuni</a>
+    </section>
+
+    <div id="menu-app" hidden>
+      <section class="shared-title">
+        <p class="eyebrow">Shared with Vemuni</p>
+        <h1 id="restaurant-name">Restaurant Menu</h1>
+        <p id="expiry-note" class="shared-expiry"></p>
+      </section>
+
+      <div class="shared-controls" aria-label="Menu controls">
+        <div class="shared-picks-summary">
+          <span aria-hidden="true">▣</span>
+          <strong>My Picks</strong>
+          <span id="pick-count">0 items</span>
+          <span id="pick-total" class="shared-pick-total"></span>
+        </div>
+        <label class="shared-search">
+          <span class="visually-hidden">Search menu</span>
+          <input id="menu-search" type="search" placeholder="Search menu" autocomplete="off">
+        </label>
+        <div id="filter-chips" class="shared-chips" aria-label="Filter menu">
+          <button class="shared-chip active" type="button" data-filter="all">All items</button>
+          <button class="shared-chip" type="button" data-filter="food">Food</button>
+          <button class="shared-chip" type="button" data-filter="drink">Drinks</button>
+          <button class="shared-chip" type="button" data-filter="wine">Wine</button>
+          <button class="shared-chip" type="button" data-filter="dessert">Dessert</button>
+        </div>
+      </div>
+
+      <div id="menu-sections" class="shared-sections"></div>
+      <p id="empty-results" class="shared-empty" hidden>No menu items match this search.</p>
+
+      <aside class="shared-disclaimer">
+        <strong>Please confirm with the restaurant.</strong>
+        <p>AI can make mistakes. Verify prices, ingredients, allergens, dietary needs, and alcohol information with restaurant staff.</p>
+      </aside>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-row shared-shell">
+      <span>Shared privately for 24 hours</span>
+      <div class="footer-links"><a href="/privacy/">Privacy</a><a href="/support/">Support</a></div>
+    </div>
+  </footer>
+  <script src="/menu/menu.js" defer></script>
+</body>
+</html>
