@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import FirebaseAuth
+import FirebaseFunctions
 import RevenueCat
 
 enum SubscriptionPurchaseOutcome {
@@ -19,6 +21,8 @@ final class SubscriptionStore: NSObject, ObservableObject, PurchasesDelegate {
 
     private var isConfigured = false
     private var identifiedUserID: String?
+    private var revenueCatIsPlus = false
+    private var overrideIsPlus = false
 
     override init() {
         super.init()
@@ -42,21 +46,23 @@ final class SubscriptionStore: NSObject, ObservableObject, PurchasesDelegate {
     }
 
     func refresh() async {
-        guard isConfigured else { return }
-        isLoading = true
-        defer { isLoading = false }
+        if isConfigured {
+            isLoading = true
+            defer { isLoading = false }
 
-        do {
-            async let customerInfo = Purchases.shared.customerInfo()
-            async let offerings = Purchases.shared.offerings()
-            let (info, availableOfferings) = try await (customerInfo, offerings)
-            apply(info)
-            packages = availableOfferings.current?.availablePackages
-                .filter { $0.packageType == .annual || $0.packageType == .monthly }
-                .sorted { packageOrder($0) < packageOrder($1) } ?? []
-        } catch {
-            errorMessage = error.localizedDescription
+            do {
+                async let customerInfo = Purchases.shared.customerInfo()
+                async let offerings = Purchases.shared.offerings()
+                let (info, availableOfferings) = try await (customerInfo, offerings)
+                apply(info)
+                packages = availableOfferings.current?.availablePackages
+                    .filter { $0.packageType == .annual || $0.packageType == .monthly }
+                    .sorted { packageOrder($0) < packageOrder($1) } ?? []
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
+        await refreshPlusOverride()
     }
 
     func purchase(_ package: Package) async -> SubscriptionPurchaseOutcome {
@@ -93,31 +99,36 @@ final class SubscriptionStore: NSObject, ObservableObject, PurchasesDelegate {
     }
 
     func identify(firebaseUserID: String) async {
-        guard isConfigured else { return }
         if identifiedUserID == firebaseUserID {
             await refresh()
             return
         }
 
-        do {
-            let result = try await Purchases.shared.logIn(firebaseUserID)
-            identifiedUserID = firebaseUserID
-            apply(result.customerInfo)
-            await refresh()
-        } catch {
-            errorMessage = error.localizedDescription
+        identifiedUserID = firebaseUserID
+        if isConfigured {
+            do {
+                let result = try await Purchases.shared.logIn(firebaseUserID)
+                apply(result.customerInfo)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
+        await refresh()
     }
 
     func clearIdentity() async {
-        guard isConfigured, identifiedUserID != nil else { return }
-        do {
-            let info = try await Purchases.shared.logOut()
-            identifiedUserID = nil
-            apply(info)
-        } catch {
-            errorMessage = error.localizedDescription
+        guard identifiedUserID != nil else { return }
+        if isConfigured {
+            do {
+                let info = try await Purchases.shared.logOut()
+                apply(info)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
+        identifiedUserID = nil
+        overrideIsPlus = false
+        updatePlusStatus()
     }
 
     nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
@@ -125,7 +136,35 @@ final class SubscriptionStore: NSObject, ObservableObject, PurchasesDelegate {
     }
 
     private func apply(_ info: CustomerInfo) {
-        isPlus = info.entitlements[Self.entitlementID]?.isActive == true
+        revenueCatIsPlus = info.entitlements[Self.entitlementID]?.isActive == true
+        updatePlusStatus()
+    }
+
+    private func refreshPlusOverride() async {
+        guard Auth.auth().currentUser != nil else {
+            overrideIsPlus = false
+            updatePlusStatus()
+            return
+        }
+        do {
+            let result = try await Functions.functions(region: "us-central1")
+                .httpsCallable("getVemuniPlusStatus")
+                .call()
+            let data = result.data as? [String: Any]
+            overrideIsPlus = data?["overrideEnabled"] as? Bool ?? false
+            #if DEBUG
+            print("Vemuni Plus override check", Auth.auth().currentUser?.uid ?? "no-user", overrideIsPlus)
+            #endif
+            updatePlusStatus()
+        } catch {
+            overrideIsPlus = false
+            updatePlusStatus()
+            errorMessage = "Plus access check failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func updatePlusStatus() {
+        isPlus = revenueCatIsPlus || overrideIsPlus
     }
 
     private func packageOrder(_ package: Package) -> Int {

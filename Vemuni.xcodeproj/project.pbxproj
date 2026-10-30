@@ -10,6 +10,7 @@
 		900E16D93090E23D00C106AF /* SubscriptionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900E16D83090E23D00C106AF /* SubscriptionStore.swift */; };
 		900E16DA3090E23D00C106AF /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900E16D73090E23D00C106AF /* PaywallView.swift */; };
 		900E16DD3090E6AC00C106AF /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 900E16DC3090E6AC00C106AF /* RevenueCat */; };
+		900E16DF3091347F00C106AF /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 900E16DE3091347F00C106AF /* FirebaseFunctions */; };
 		A10000000000000000000001 /* VemuniApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000001 /* VemuniApp.swift */; };
 		A10000000000000000000002 /* VemuniTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* VemuniTheme.swift */; };
 		A10000000000000000000003 /* ScanModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000003 /* ScanModels.swift */; };
@@ -94,6 +95,7 @@
 				A10000000000000000000016 /* FirebaseCore in Frameworks */,
 				A10000000000000000000017 /* FirebaseAuth in Frameworks */,
 				900E16DD3090E6AC00C106AF /* RevenueCat in Frameworks */,
+				900E16DF3091347F00C106AF /* FirebaseFunctions in Frameworks */,
 				A10000000000000000000018 /* GoogleSignIn in Frameworks */,
 				A10000000000000000000020 /* FirebaseAnalytics in Frameworks */,
 				A10000000000000000000022 /* FirebaseFirestore in Frameworks */,
@@ -197,6 +199,7 @@
 				P10000000000000000000005 /* FirebaseFirestore */,
 				P10000000000000000000006 /* FirebaseStorage */,
 				900E16DC3090E6AC00C106AF /* RevenueCat */,
+				900E16DE3091347F00C106AF /* FirebaseFunctions */,
 			);
 			productName = Vemuni;
 			productReference = B10000000000000000000012 /* Vemuni.app */;
@@ -486,6 +489,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 900E16DB3090E6AC00C106AF /* XCRemoteSwiftPackageReference "purchases-ios" */;
 			productName = RevenueCat;
+		};
+		900E16DE3091347F00C106AF /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = K10000000000000000000001 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
 		};
 		P10000000000000000000001 /* FirebaseCore */ = {
 			isa = XCSwiftPackageProductDependency;

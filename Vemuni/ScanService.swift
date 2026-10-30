@@ -22,11 +22,22 @@ enum ScanServiceError: LocalizedError {
 struct ScanService {
     func analyze(images: [UIImage], mode: ScanMode) async throws -> VemuniScanResult {
         guard
-            let endpoint = Bundle.main.object(forInfoDictionaryKey: "VEMUNI_SCAN_ENDPOINT") as? String,
-            !endpoint.isEmpty,
-            !endpoint.contains("YOUR_PROJECT") ,
-            let url = URL(string: endpoint)
+            let configuredEndpoint = Bundle.main.object(forInfoDictionaryKey: "VEMUNI_SCAN_ENDPOINT") as? String,
+            !configuredEndpoint.isEmpty,
+            !configuredEndpoint.contains("YOUR_PROJECT")
         else { throw ScanServiceError.missingEndpoint }
+
+        var endpoint = configuredEndpoint
+        #if DEBUG
+        if mode == .menu,
+           UserDefaults.standard.bool(forKey: "vemuni.useFastScanner") {
+            endpoint = configuredEndpoint.replacingOccurrences(
+                of: "analyzeDiningPhoto",
+                with: "analyzeDiningPhotoFast"
+            )
+        }
+        #endif
+        guard let url = URL(string: endpoint) else { throw ScanServiceError.missingEndpoint }
 
         let imagePayloads = images.compactMap { image in
             image.vemuniUploadData(maxDimension: images.count > 1 ? 1600 : 1800)?.base64EncodedString()

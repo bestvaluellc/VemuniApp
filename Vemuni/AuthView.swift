@@ -62,10 +62,10 @@ struct AuthView: View {
                             .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(AuthTextFieldStyle())
                         SecureField("Password", text: $password)
                             .textContentType(createAccount ? .newPassword : .password)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(AuthTextFieldStyle())
 
                         Button {
                             isWorking = true
@@ -124,10 +124,27 @@ private struct AuthButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(VemuniTheme.espresso)
+            .foregroundStyle(Color.black)
             .padding(.vertical, 15)
             .background(Color.white.opacity(configuration.isPressed ? 0.55 : 0.9))
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay { RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.08)) }
+            .overlay { RoundedRectangle(cornerRadius: 14).stroke(Color.primary.opacity(0.12)) }
+    }
+}
+
+private struct AuthTextFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .font(.body)
+            .foregroundStyle(VemuniTheme.espresso)
+            .tint(VemuniTheme.copper)
+            .padding(.horizontal, 14)
+            .frame(height: 52)
+            .background(VemuniTheme.cream)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+            }
     }
 }

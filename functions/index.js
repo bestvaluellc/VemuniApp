@@ -1,5 +1,5 @@
 const admin = require("firebase-admin");
-const { onRequest } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const OpenAI = require("openai");
 
@@ -7,8 +7,34 @@ admin.initializeApp();
 
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
 const OPENAI_MODEL = "gpt-5.4-mini";
+const FAST_OPENAI_MODEL = "gpt-4.1-mini";
 const INTRODUCTORY_SCANS = 5;
 const MAXIMUM_PAGE_COUNT = 6;
+
+exports.getVemuniPlusStatus = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 5,
+    invoker: "public"
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in to Vemuni before checking Plus access.");
+    }
+    const snapshot = await admin.firestore()
+      .collection("proAccessOverrides")
+      .doc(request.auth.uid)
+      .get();
+    const overrideEnabled = snapshot.data()?.enabled === true;
+    console.log("Vemuni Plus override check", {
+      uid: request.auth.uid,
+      overrideEnabled
+    });
+    return { overrideEnabled };
+  }
+);
 
 exports.analyzeDiningPhoto = onRequest(
   {
@@ -20,6 +46,7 @@ exports.analyzeDiningPhoto = onRequest(
     cors: true
   },
   async (request, response) => {
+    const requestStartedAt = Date.now();
     if (request.method !== "POST") {
       response.status(405).json({ error: "Use POST." });
       return;
@@ -30,7 +57,6 @@ exports.analyzeDiningPhoto = onRequest(
     const requestedImages = Array.isArray(request.body?.imagesBase64) ? request.body.imagesBase64 : [];
     const imagesBase64 = (requestedImages.length ? requestedImages : [legacyImage]).map(String).filter(Boolean);
     const totalImageBytes = imagesBase64.reduce((total, image) => total + image.length, 0);
-
     if (!imagesBase64.length || imagesBase64.length > MAXIMUM_PAGE_COUNT || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
       response.status(400).json({ error: "Add between one and six clear menu pages and try again." });
       return;
@@ -48,55 +74,59 @@ exports.analyzeDiningPhoto = onRequest(
         return;
       }
 
+      const aiStartedAt = Date.now();
       const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
-      const aiResponse = await openai.responses.create({
-        model: OPENAI_MODEL,
-        reasoning: { effort: "low" },
-        input: [
-          {
-            role: "developer",
-            content: [{ type: "input_text", text: systemPrompt(mode) }]
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: mode === "menu"
-                  ? `Read and explain this ${imagesBase64.length}-page menu. The selected pages may not be supplied in the restaurant's menu order.`
-                  : "Analyze this restaurant bill."
-              },
-              ...imagesBase64.map((image) => ({
-                type: "input_image",
-                image_url: `data:image/jpeg;base64,${image}`,
-                detail: "high"
-              }))
-            ]
-          }
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "vemuni_scan",
-            strict: true,
-            schema: resultSchema()
-          }
-        }
-      });
+      const aiResponses = [await analyzeWithOpenAI(
+        openai,
+        mode,
+        imagesBase64,
+        mode === "menu"
+          ? `Read and explain this ${imagesBase64.length}-page menu. The selected pages may not be supplied in the restaurant's menu order.`
+          : "Analyze this restaurant bill."
+      )];
+      const aiCompletedAt = Date.now();
 
-      const result = JSON.parse(aiResponse.output_text);
-      const usage = normalizedUsage(aiResponse.usage);
+      const pageResults = aiResponses.map((aiResponse) => JSON.parse(aiResponse.output_text));
+      const result = pageResults[0];
+      const allAiResponses = aiResponses;
+      const usage = sumUsage(allAiResponses.map((aiResponse) => normalizedUsage(aiResponse.usage)));
+      const primaryResponse = aiResponses[0];
       result.aiUsage = {
-        model: aiResponse.model || OPENAI_MODEL,
+        model: primaryResponse.model || OPENAI_MODEL,
         ...usage
       };
+      const timing = {
+        imagePayloadCharacters: totalImageBytes,
+        serviceTier: primaryResponse.service_tier || "unknown",
+        processingMode: "combined-full-wine-detail",
+        aiCallCount: allAiResponses.length,
+        wineProfileCount: result.menuSections
+          .flatMap((section) => section.items)
+          .filter((item) => item.wineDetails !== null).length,
+        preAiMs: aiStartedAt - requestStartedAt,
+        aiMs: aiCompletedAt - aiStartedAt
+      };
       await recordSuccessfulScan(user.uid, allowance, {
-        responseId: aiResponse.id,
+        responseId: primaryResponse.id,
         mode,
         pageCount: imagesBase64.length,
-        model: aiResponse.model || OPENAI_MODEL,
-        usage
+        model: primaryResponse.model || OPENAI_MODEL,
+        usage,
+        timing
       });
+      const requestCompletedAt = Date.now();
+      console.log(JSON.stringify({
+        event: "vemuni_scan_timing",
+        mode,
+        pageCount: imagesBase64.length,
+        model: primaryResponse.model || OPENAI_MODEL,
+        ...timing,
+        postAiMs: requestCompletedAt - aiCompletedAt,
+        totalServerMs: requestCompletedAt - requestStartedAt,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens
+      }));
       response.status(200).json(result);
     } catch (error) {
       console.error("Vemuni scan failed", error);
@@ -104,6 +134,212 @@ exports.analyzeDiningPhoto = onRequest(
     }
   }
 );
+
+exports.analyzeDiningPhotoFast = onRequest(
+  {
+    region: "us-central1",
+    invoker: "public",
+    secrets: [OPENAI_API_KEY],
+    timeoutSeconds: 120,
+    memory: "1GiB",
+    cors: true
+  },
+  async (request, response) => {
+    const requestStartedAt = Date.now();
+    if (request.method !== "POST") {
+      response.status(405).json({ error: "Use POST." });
+      return;
+    }
+
+    const mode = request.body?.mode === "receipt" ? "receipt" : "menu";
+    const legacyImage = String(request.body?.imageBase64 || "");
+    const requestedImages = Array.isArray(request.body?.imagesBase64) ? request.body.imagesBase64 : [];
+    const imagesBase64 = (requestedImages.length ? requestedImages : [legacyImage]).map(String).filter(Boolean);
+    const totalImageBytes = imagesBase64.reduce((total, image) => total + image.length, 0);
+    if (!imagesBase64.length || imagesBase64.length > MAXIMUM_PAGE_COUNT || imagesBase64.some((image) => image.length > 8_000_000) || totalImageBytes > 28_000_000) {
+      response.status(400).json({ error: "Add between one and six clear menu pages and try again." });
+      return;
+    }
+
+    try {
+      const user = await authenticatedUser(request);
+      if (!user) {
+        response.status(401).json({ error: "Sign in before scanning." });
+        return;
+      }
+      const allowance = await scanAllowance(user.uid);
+      if (!allowance.allowed) {
+        response.status(429).json({ error: "You’ve used your five free scans. Upgrade to Vemuni Plus to continue." });
+        return;
+      }
+
+      const aiStartedAt = Date.now();
+      const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() });
+      const parallelPages = mode === "menu" && imagesBase64.length > 1;
+      const aiResponses = parallelPages
+        ? await Promise.all(imagesBase64.map((image, index) => analyzeFastWithOpenAI(
+          openai,
+          mode,
+          [image],
+          `Read and explain menu page ${index + 1}.`
+        )))
+        : [await analyzeFastWithOpenAI(
+          openai,
+          mode,
+          imagesBase64,
+          mode === "menu" ? "Read and explain this menu." : "Analyze this restaurant bill."
+        )];
+      const aiCompletedAt = Date.now();
+
+      const pageResults = aiResponses.map((aiResponse) => expandCompactResult(JSON.parse(aiResponse.output_text)));
+      const result = parallelPages ? mergeMenuResults(pageResults) : pageResults[0];
+      const usage = sumUsage(aiResponses.map((aiResponse) => normalizedUsage(aiResponse.usage)));
+      const primaryResponse = aiResponses[0];
+      result.aiUsage = {
+        model: primaryResponse.model || FAST_OPENAI_MODEL,
+        ...usage
+      };
+      const timing = {
+        imagePayloadCharacters: totalImageBytes,
+        serviceTier: primaryResponse.service_tier || "unknown",
+        processingMode: parallelPages ? "debug-fast-parallel" : "debug-fast-single",
+        aiCallCount: aiResponses.length,
+        wineProfileCount: result.menuSections
+          .flatMap((section) => section.items)
+          .filter((item) => item.wineDetails !== null).length,
+        preAiMs: aiStartedAt - requestStartedAt,
+        aiMs: aiCompletedAt - aiStartedAt
+      };
+      await recordSuccessfulScan(user.uid, allowance, {
+        responseId: parallelPages ? `${primaryResponse.id}_fast_p${aiResponses.length}` : `${primaryResponse.id}_fast`,
+        mode,
+        pageCount: imagesBase64.length,
+        model: primaryResponse.model || FAST_OPENAI_MODEL,
+        usage,
+        timing
+      });
+      const requestCompletedAt = Date.now();
+      console.log(JSON.stringify({
+        event: "vemuni_scan_timing",
+        strategy: "debug-fast",
+        mode,
+        pageCount: imagesBase64.length,
+        model: primaryResponse.model || FAST_OPENAI_MODEL,
+        ...timing,
+        postAiMs: requestCompletedAt - aiCompletedAt,
+        totalServerMs: requestCompletedAt - requestStartedAt,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens
+      }));
+      response.status(200).json(result);
+    } catch (error) {
+      console.error("Vemuni fast scan failed", error);
+      response.status(500).json({ error: "Vemuni could not read this image. Try a clearer, closer photo." });
+    }
+  }
+);
+
+async function analyzeWithOpenAI(openai, mode, imagesBase64, instruction) {
+  return openai.responses.create({
+    model: OPENAI_MODEL,
+    service_tier: "fast",
+    reasoning: { effort: "low" },
+    input: [
+      {
+        role: "developer",
+        content: [{ type: "input_text", text: systemPrompt(mode) }]
+      },
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: instruction },
+          ...imagesBase64.map((image) => ({
+            type: "input_image",
+            image_url: `data:image/jpeg;base64,${image}`,
+            detail: "low"
+          }))
+        ]
+      }
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "vemuni_scan",
+        strict: true,
+        schema: resultSchema()
+      }
+    }
+  });
+}
+
+async function analyzeFastWithOpenAI(openai, mode, imagesBase64, instruction) {
+  return openai.responses.create({
+    model: FAST_OPENAI_MODEL,
+    service_tier: "default",
+    input: [
+      {
+        role: "developer",
+        content: [{ type: "input_text", text: fastSystemPrompt(mode) }]
+      },
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: instruction },
+          ...imagesBase64.map((image) => ({
+            type: "input_image",
+            image_url: `data:image/jpeg;base64,${image}`,
+            detail: "low"
+          }))
+        ]
+      }
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "vemuni_fast_scan",
+        strict: true,
+        schema: compactResultSchema()
+      }
+    }
+  });
+}
+
+function fastSystemPrompt(mode) {
+  return `${systemPrompt(mode)}\nFor this debug fast response, use compact keys: top level k=kind, mt=menuType, l=detectedLanguage, n=notice, r=restaurantName, c=currencyCode, s=menuSections, rec=receipt, w=warnings; section n=name, t=sectionType, i=items; item o=originalName, e=englishName, x=explanation, p=price, t=itemType, d=dietary, a=allergens, sp=spiceLevel, wi=wineDetails, dr=drinkDetails; wine p=producer, g=grape, r=region, c=country, v=vintage, s=style, gp=glassPrice, bp=bottlePrice, b=body, ac=acidity, ta=tannin, sw=sweetness, al=alcohol, f=flavors, fp=foodPairings, ss=servingSuggestion, typ=profileIsTypical; drink t=drinkType, b=baseSpirit, i=ingredients, f=flavorProfile, a=abv; receipt sub=subtotal, tax=tax, sc=serviceCharge, scl=serviceChargeLabel, tip=statedTip, tot=total, tb=tipBase, ti=tipAlreadyIncluded, dup=possibleDuplicateTipRisk, li=lineItems; receipt line item n=name, a=amount.`;
+}
+
+async function analyzeWineProfiles(openai, imageBase64) {
+  return openai.responses.create({
+    model: OPENAI_MODEL,
+    service_tier: "default",
+    input: [
+      {
+        role: "developer",
+        content: [{
+          type: "input_text",
+          text: "Read only wines visible on this menu page. If there are no wines, return an empty array. Preserve each printed wine name. Never invent printed producer, grape, region, country, vintage, style, or prices; use null when absent. For every visible wine, provide a concise typical body, acidity, tannin, sweetness, flavors, food pairings, and serving suggestion when supported by the visible name, grape, region, appellation, or recognized style. Mark inferred profiles as typical. Compact keys: w=wines, n=originalName, d=wineDetails; within d, p=producer, g=grape, r=region, c=country, v=vintage, s=style, gp=glassPrice, bp=bottlePrice, b=body, ac=acidity, ta=tannin, sw=sweetness, al=alcohol, f=flavors, fp=foodPairings, ss=servingSuggestion, typ=profileIsTypical. Match the JSON schema."
+        }]
+      },
+      {
+        role: "user",
+        content: [{
+          type: "input_image",
+          image_url: `data:image/jpeg;base64,${imageBase64}`,
+          detail: "low"
+        }]
+      }
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "vemuni_wine_profiles",
+        strict: true,
+        schema: wineProfileResultSchema()
+      }
+    }
+  });
+}
 
 function systemPrompt(mode) {
   const common = `You are Vemuni, a careful restaurant food, wine, drinks, and receipt reader. Analyze only visible evidence. Automatically detect the language and return clear American English. Preserve original item names. Never invent prices, totals, vintages, producers, regions, ingredients, allergens, dietary status, alcohol percentages, or fees. Use null or empty arrays when unknown. Allergens are possible indicators, not guarantees. Currency should be a three-letter ISO code when reasonably inferable, otherwise USD. The response must match the supplied JSON schema.`;
@@ -119,7 +355,7 @@ Classify an item from what the item itself is, not from ingredients mentioned in
 
 For every menu price: preserve whether it is fixed, market price, a choice of prices, or priced by a unit. Keep market price as "MP". Keep multiple visible prices and their labels when available. Format per-unit prices unambiguously, for example "36/oz" or "12 per person"—never collapse "$36/oz" into "36oz". Do not place a serving weight or bottle size in the price field. If a fixed price is not visible, use null rather than inferring one.
 
-For wine: fill wineDetails and set drinkDetails to null. Printed facts such as producer, vintage, grape, region, country, and prices must come from visible text; use null when absent. You may provide a typical tasting profile, body, acidity, tannin, sweetness, general food pairings, and serving guidance when reasonably supported by the named grape, region, appellation, or recognized wine style. Set profileIsTypical true whenever any profile or pairing detail is inferred rather than printed. Do not imply that a typical characteristic was printed on the menu.
+For wine: every entry printed under a WINE, SPARKLING, WHITE, ORANGE, ROSÉ, RED, or other wine-list heading must have itemType "wine", a non-null wineDetails object, and drinkDetails null. Never classify those entries as generic drinks. Printed facts such as producer, vintage, grape, region, country, and prices must come from visible text; use null when absent. Even when printed facts are sparse, use the visible producer, wine name, grape, region, appellation, or recognized style to provide a concise typical profile: fill body, acidity, tannin, sweetness, flavors, general foodPairings, and servingSuggestion whenever reasonably supported. Set profileIsTypical true whenever any profile or pairing detail is inferred rather than printed. Do not imply that a typical characteristic was printed on the menu, and leave genuinely unsupported fields empty rather than guessing.
 
 For cocktails, beer, and other drinks: fill drinkDetails and set wineDetails to null. Use visible ingredients. You may explain a widely recognized standard cocktail or drink style, but never invent a restaurant-specific ingredient or ABV. For food items, both detail objects must be null. Return receipt as null.`;
 }
@@ -257,6 +493,391 @@ function drinkDetailsSchema(nullableString) {
   };
 }
 
+function compactResultSchema() {
+  const nullableNumber = { anyOf: [{ type: "number" }, { type: "null" }] };
+  const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] };
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["k", "mt", "l", "n", "r", "c", "s", "rec", "w"],
+    properties: {
+      k: { type: "string", enum: ["menu", "receipt"] },
+      mt: { type: "string", enum: ["food", "wine", "drinks", "mixed", "unknown"] },
+      l: { type: "string" },
+      n: { type: "string" },
+      r: nullableString,
+      c: { type: "string" },
+      s: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["n", "t", "i"],
+          properties: {
+            n: { type: "string" },
+            t: { type: "string", enum: ["food", "wine", "drink", "mixed", "unknown"] },
+            i: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["o", "e", "x", "p", "t", "d", "a", "sp", "wi", "dr"],
+                properties: {
+                  o: { type: "string" },
+                  e: { type: "string" },
+                  x: { type: "string" },
+                  p: nullableString,
+                  t: { type: "string", enum: ["food", "wine", "drink", "unknown"] },
+                  d: { type: "array", items: { type: "string" } },
+                  a: { type: "array", items: { type: "string" } },
+                  sp: nullableString,
+                  wi: compactWineDetailsSchema(nullableString),
+                  dr: compactDrinkDetailsSchema(nullableString)
+                }
+              }
+            }
+          }
+        }
+      },
+      rec: {
+        anyOf: [
+          { type: "null" },
+          {
+            type: "object",
+            additionalProperties: false,
+            required: ["sub", "tax", "sc", "scl", "tip", "tot", "tb", "ti", "dup", "li"],
+            properties: {
+              sub: nullableNumber,
+              tax: nullableNumber,
+              sc: nullableNumber,
+              scl: nullableString,
+              tip: nullableNumber,
+              tot: nullableNumber,
+              tb: nullableNumber,
+              ti: { type: "boolean" },
+              dup: { type: "boolean" },
+              li: {
+                type: "array",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["n", "a"],
+                  properties: { n: { type: "string" }, a: { type: "number" } }
+                }
+              }
+            }
+          }
+        ]
+      },
+      w: { type: "array", items: { type: "string" } }
+    }
+  };
+}
+
+function compactWineDetailsSchema(nullableString) {
+  return {
+    anyOf: [
+      { type: "null" },
+      compactWineObjectSchema(nullableString)
+    ]
+  };
+}
+
+function wineProfileResultSchema() {
+  const nullableString = { anyOf: [{ type: "string" }, { type: "null" }] };
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["w"],
+    properties: {
+      w: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["n", "d"],
+          properties: {
+            n: { type: "string" },
+            d: compactWineObjectSchema(nullableString)
+          }
+        }
+      }
+    }
+  };
+}
+
+function compactWineObjectSchema(nullableString) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["p", "g", "r", "c", "v", "s", "gp", "bp", "b", "ac", "ta", "sw", "al", "f", "fp", "ss", "typ"],
+    properties: {
+      p: nullableString, g: nullableString, r: nullableString, c: nullableString,
+      v: nullableString, s: nullableString, gp: nullableString, bp: nullableString,
+      b: nullableString, ac: nullableString, ta: nullableString, sw: nullableString,
+      al: nullableString,
+      f: { type: "array", items: { type: "string" } },
+      fp: { type: "array", items: { type: "string" } },
+      ss: nullableString,
+      typ: { type: "boolean" }
+    }
+  };
+}
+
+function compactDrinkDetailsSchema(nullableString) {
+  return {
+    anyOf: [
+      { type: "null" },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["t", "b", "i", "f", "a"],
+        properties: {
+          t: nullableString,
+          b: nullableString,
+          i: { type: "array", items: { type: "string" } },
+          f: { type: "array", items: { type: "string" } },
+          a: nullableString
+        }
+      }
+    ]
+  };
+}
+
+function expandCompactResult(value) {
+  const expandWine = (wine) => wine === null ? null : {
+    producer: wine.p,
+    grape: wine.g,
+    region: wine.r,
+    country: wine.c,
+    vintage: wine.v,
+    style: wine.s,
+    glassPrice: wine.gp,
+    bottlePrice: wine.bp,
+    body: wine.b,
+    acidity: wine.ac,
+    tannin: wine.ta,
+    sweetness: wine.sw,
+    alcohol: wine.al,
+    flavors: wine.f,
+    foodPairings: wine.fp,
+    servingSuggestion: wine.ss,
+    profileIsTypical: wine.typ
+  };
+  const expandDrink = (drink) => drink === null ? null : {
+    drinkType: drink.t,
+    baseSpirit: drink.b,
+    ingredients: drink.i,
+    flavorProfile: drink.f,
+    abv: drink.a
+  };
+  const receipt = value.rec === null ? null : {
+    subtotal: value.rec.sub,
+    tax: value.rec.tax,
+    serviceCharge: value.rec.sc,
+    serviceChargeLabel: value.rec.scl,
+    statedTip: value.rec.tip,
+    total: value.rec.tot,
+    tipBase: value.rec.tb,
+    tipAlreadyIncluded: value.rec.ti,
+    possibleDuplicateTipRisk: value.rec.dup,
+    lineItems: value.rec.li.map((item) => ({ name: item.n, amount: item.a }))
+  };
+  return {
+    kind: value.k,
+    menuType: value.mt,
+    detectedLanguage: value.l,
+    notice: value.n,
+    restaurantName: value.r,
+    currencyCode: value.c,
+    menuSections: value.s.map((section) => ({
+      name: section.n,
+      sectionType: section.t,
+      items: section.i.map((item) => ({
+        originalName: item.o,
+        englishName: item.e,
+        explanation: item.x,
+        price: item.p,
+        itemType: item.t,
+        dietary: item.d,
+        allergens: item.a,
+        spiceLevel: item.sp,
+        wineDetails: expandWine(item.wi),
+        drinkDetails: expandDrink(item.dr)
+      }))
+    })),
+    receipt,
+    warnings: value.w
+  };
+}
+
+function attachWineProfiles(pageResults, wineProfileResponses) {
+  const profiles = wineProfileResponses.flatMap((response) => {
+    const parsed = JSON.parse(response.output_text);
+    return parsed.w.map((wine) => ({
+      name: wine.n,
+      key: normalizedText(wine.n),
+      details: expandDedicatedWineDetails(wine.d)
+    }));
+  });
+  for (const result of pageResults) {
+    for (const section of result.menuSections) {
+      for (const item of section.items) {
+        const itemKey = normalizedText(item.originalName);
+        const profile = profiles.find((candidate) => candidate.key === itemKey)
+          || profiles.find((candidate) => itemKey.length >= 5 && candidate.key.length >= 5
+            && (candidate.key.includes(itemKey) || itemKey.includes(candidate.key)));
+        if (!profile) continue;
+        item.itemType = "wine";
+        item.wineDetails = profile.details;
+        item.drinkDetails = null;
+      }
+    }
+  }
+  return profiles.length;
+}
+
+function expandDedicatedWineDetails(wine) {
+  return {
+    producer: wine.p,
+    grape: wine.g,
+    region: wine.r,
+    country: wine.c,
+    vintage: wine.v,
+    style: wine.s,
+    glassPrice: wine.gp,
+    bottlePrice: wine.bp,
+    body: wine.b,
+    acidity: wine.ac,
+    tannin: wine.ta,
+    sweetness: wine.sw,
+    alcohol: wine.al,
+    flavors: wine.f,
+    foodPairings: wine.fp,
+    servingSuggestion: wine.ss,
+    profileIsTypical: wine.typ
+  };
+}
+
+function sumUsage(usages) {
+  return usages.reduce((total, usage) => ({
+    inputTokens: total.inputTokens + usage.inputTokens,
+    cachedInputTokens: total.cachedInputTokens + usage.cachedInputTokens,
+    outputTokens: total.outputTokens + usage.outputTokens,
+    reasoningTokens: total.reasoningTokens + usage.reasoningTokens,
+    totalTokens: total.totalTokens + usage.totalTokens
+  }), {
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0
+  });
+}
+
+function mergeMenuResults(results) {
+  const sectionMap = new Map();
+  for (const result of results) {
+    for (const section of result.menuSections) {
+      const sectionKey = normalizedText(section.name) || `${section.sectionType}-${sectionMap.size}`;
+      const existing = sectionMap.get(sectionKey);
+      if (!existing) {
+        sectionMap.set(sectionKey, { ...section, items: [...section.items] });
+        continue;
+      }
+      const itemKeys = new Set(existing.items.map(menuItemKey));
+      for (const item of section.items) {
+        const itemKey = menuItemKey(item);
+        if (!itemKeys.has(itemKey)) {
+          existing.items.push(item);
+          itemKeys.add(itemKey);
+        }
+      }
+      if (existing.sectionType === "unknown" && section.sectionType !== "unknown") {
+        existing.sectionType = section.sectionType;
+      } else if (existing.sectionType !== section.sectionType) {
+        existing.sectionType = "mixed";
+      }
+    }
+  }
+  const menuSections = [...sectionMap.values()].sort((left, right) => sectionRank(left) - sectionRank(right));
+  const itemTypes = new Set(menuSections.flatMap((section) => section.items.map((item) => item.itemType)));
+  itemTypes.delete("unknown");
+  let menuType = "unknown";
+  if (itemTypes.size > 1) menuType = "mixed";
+  else if (itemTypes.has("food")) menuType = "food";
+  else if (itemTypes.has("wine")) menuType = "wine";
+  else if (itemTypes.has("drink")) menuType = "drinks";
+  return {
+    kind: "menu",
+    menuType,
+    detectedLanguage: firstUseful(results.map((result) => result.detectedLanguage)) || "unknown",
+    notice: firstUseful(results.map((result) => result.notice)) || "",
+    restaurantName: mostFrequentUseful(results.map((result) => result.restaurantName)),
+    currencyCode: mostFrequentUseful(results.map((result) => result.currencyCode)) || "USD",
+    menuSections,
+    receipt: null,
+    warnings: uniqueStrings(results.flatMap((result) => result.warnings))
+  };
+}
+
+function menuItemKey(item) {
+  return [normalizedText(item.originalName), normalizedText(item.price), item.itemType].join("|");
+}
+
+function normalizedText(value) {
+  return String(value || "").trim().toLocaleLowerCase("en-US").replace(/\s+/g, " ");
+}
+
+function firstUseful(values) {
+  return values.find((value) => normalizedText(value)) || null;
+}
+
+function mostFrequentUseful(values) {
+  const counts = new Map();
+  for (const value of values) {
+    const key = normalizedText(value);
+    if (!key) continue;
+    const entry = counts.get(key) || { value, count: 0 };
+    entry.count += 1;
+    counts.set(key, entry);
+  }
+  return [...counts.values()].sort((left, right) => right.count - left.count)[0]?.value || null;
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = normalizedText(value);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sectionRank(section) {
+  const name = normalizedText(section.name);
+  const groups = [
+    ["appetizer", "starter", "first", "small plate", "raw", "caviar"],
+    ["soup"],
+    ["salad"],
+    ["entree", "main", "turf", "surf", "steak", "seafood", "pasta"],
+    ["side", "accompaniment"],
+    ["dessert", "sweet"],
+    ["zero proof", "mocktail", "non-alcoholic", "soft drink", "coffee", "tea"],
+    ["cocktail"],
+    ["beer", "ale", "lager"],
+    ["spirit", "whiskey", "bourbon", "scotch", "tequila", "vodka", "gin", "rum"],
+    ["wine", "champagne", "sparkling", "white", "red", "rosé", "rose"]
+  ];
+  const namedRank = groups.findIndex((terms) => terms.some((term) => name.includes(term)));
+  if (namedRank >= 0) return namedRank;
+  if (section.sectionType === "food") return 3;
+  if (section.sectionType === "drink") return 7;
+  if (section.sectionType === "wine") return 10;
+  return 11;
+}
+
 async function authenticatedUser(request) {
   const authorization = String(request.get("Authorization") || "");
   if (!authorization.startsWith("Bearer ")) return null;
@@ -269,12 +890,18 @@ async function authenticatedUser(request) {
 
 async function scanAllowance(uid) {
   const ref = admin.firestore().collection("vemuniUsers").doc(uid);
-  const snapshot = await ref.get();
+  const overrideRef = admin.firestore().collection("proAccessOverrides").doc(uid);
+  const [snapshot, overrideSnapshot] = await Promise.all([ref.get(), overrideRef.get()]);
   const data = snapshot.data() || {};
   const introductoryUsed = Number(data.introductoryUsed || 0);
 
-  // Client access to vemuniUsers is denied by Firestore rules, so only an
-  // administrator can grant this internal testing allowance.
+  // Client access to these collections is denied by Firestore rules, so only
+  // an administrator can grant internal testing access.
+  if (overrideSnapshot.data()?.enabled === true) {
+    return { allowed: true, type: "override", introductoryUsed };
+  }
+
+  // Preserve the original Vemuni-specific testing flag for existing testers.
   if (data.unlimitedTestScans === true) {
     return { allowed: true, type: "tester", introductoryUsed };
   }
@@ -317,6 +944,7 @@ async function recordSuccessfulScan(uid, allowance, scanMetrics) {
       mode: scanMetrics.mode,
       pageCount: scanMetrics.pageCount,
       model: scanMetrics.model,
+      ...scanMetrics.timing,
       ...usage
     },
     lastScanUsageAt: admin.firestore.FieldValue.serverTimestamp()
@@ -331,6 +959,7 @@ async function recordSuccessfulScan(uid, allowance, scanMetrics) {
     mode: scanMetrics.mode,
     pageCount: scanMetrics.pageCount,
     model: scanMetrics.model,
+    ...scanMetrics.timing,
     ...usage,
     createdAt: admin.firestore.FieldValue.serverTimestamp()
   });

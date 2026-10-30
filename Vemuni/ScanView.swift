@@ -16,6 +16,9 @@ struct ScanView: View {
     @State private var saveState: ScanSaveState?
     @State private var savedVisitID: String?
     @State private var errorMessage: String?
+    #if DEBUG
+    @AppStorage("vemuni.useFastScanner") private var useFastScanner = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -38,6 +41,36 @@ struct ScanView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                 }
+                #if DEBUG
+                if mode == .menu {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button {
+                                useFastScanner = false
+                            } label: {
+                                Label(
+                                    "Reliable scanner",
+                                    systemImage: useFastScanner ? "circle" : "checkmark"
+                                )
+                            }
+                            Button {
+                                useFastScanner = true
+                            } label: {
+                                Label(
+                                    "Fast scanner",
+                                    systemImage: useFastScanner ? "checkmark" : "circle"
+                                )
+                            }
+                        } label: {
+                            Label(
+                                useFastScanner ? "Fast" : "Reliable",
+                                systemImage: "speedometer"
+                            )
+                        }
+                        .accessibilityLabel("Scanner mode: \(useFastScanner ? "Fast" : "Reliable")")
+                    }
+                }
+                #endif
             }
             .sheet(isPresented: $showCamera) {
                 CameraPicker { selected in

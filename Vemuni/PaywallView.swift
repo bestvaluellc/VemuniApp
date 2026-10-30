@@ -139,7 +139,11 @@ struct PaywallView: View {
                     .foregroundStyle(isSelected ? VemuniTheme.copper : Color.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(title(for: package)).font(.headline)
+                        Text(title(for: package))
+                            .font(.headline)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .layoutPriority(1)
                         if package.packageType == .annual {
                             Text("BEST VALUE")
                                 .font(.caption2.bold())
@@ -157,7 +161,10 @@ struct PaywallView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(package.storeProduct.localizedPriceString).font(.headline)
+                Text(package.storeProduct.localizedPriceString)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .padding(16)
             .foregroundStyle(VemuniTheme.espresso)

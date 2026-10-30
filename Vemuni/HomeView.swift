@@ -23,9 +23,7 @@ struct HomeView: View {
                                 } else if let email = auth.user?.email {
                                     Text(email)
                                 }
-
                                 Button("Vemuni Plus") { showingPaywall = true }
-
                                 Button("Sign Out", role: .destructive) { auth.signOut() }
                             } label: {
                                 Image(systemName: "person.crop.circle")
@@ -100,6 +98,12 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallView()
+            }
+            .task {
+                await subscriptionStore.refresh()
+            }
+            .onChange(of: subscriptionStore.isPlus) { _, isPlus in
+                if isPlus { showingPaywall = false }
             }
         }
     }
