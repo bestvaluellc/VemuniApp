@@ -1,3 +1,6 @@
+import CoreImage
+import CoreImage.CIFilterBuiltins
+import FirebaseFunctions
 import SwiftUI
 import UIKit
 
@@ -18,6 +21,14 @@ struct ResultsView: View {
     @State private var isSearchPresented = false
     @State private var showingDetectionBanner = true
     @State private var showingReceiptImage = false
+    @State private var showingShareOptions = false
+    @State private var showingTableQRCode = false
+    @State private var showingTextShare = false
+    @State private var sharedMenuURL: URL?
+    @State private var sharedMenuShare: SharedMenuShare?
+    @State private var shareErrorMessage = ""
+    @State private var showingShareError = false
+    @State private var isCreatingShareLink = false
 
     init(
         result: VemuniScanResult,
@@ -78,6 +89,30 @@ struct ResultsView: View {
                 storagePath: receiptImagePath
             )
         }
+        .sheet(isPresented: $showingTableQRCode) {
+            TableQRCodeView(result: result)
+        }
+        .sheet(isPresented: $showingTextShare) {
+            ActivityView(activityItems: [sharedMenuText])
+        }
+        .sheet(item: $sharedMenuShare) { share in
+            ActivityView(activityItems: [share.url])
+        }
+        .confirmationDialog("Share menu", isPresented: $showingShareOptions, titleVisibility: .visible) {
+            Button("Share Menu Link") {
+                Task { await shareMenuLink() }
+            }
+            Button("Show Menu QR Code") { showingTableQRCode = true }
+            Button("Share as Plain Text") { showingTextShare = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The link and QR code open a readable menu webpage. Original photos and your My Picks are not shared.")
+        }
+        .alert("Couldn’t share menu", isPresented: $showingShareError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareErrorMessage)
+        }
         .task(id: saveState != nil) {
             guard saveState != nil else {
                 showingDetectionBanner = false
@@ -103,7 +138,7 @@ struct ResultsView: View {
                     .accessibilityLabel("Search menu")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: sharedMenuText) {
+                    Button { showingShareOptions = true } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
                     .accessibilityLabel("Share full menu")
@@ -438,6 +473,26 @@ struct ResultsView: View {
         return lines.joined(separator: "\n")
     }
 
+    @MainActor
+    private func shareMenuLink() async {
+        guard !isCreatingShareLink else { return }
+        if let sharedMenuURL {
+            try? await Task.sleep(for: .milliseconds(250))
+            sharedMenuShare = SharedMenuShare(url: sharedMenuURL)
+            return
+        }
+        isCreatingShareLink = true
+        defer { isCreatingShareLink = false }
+        do {
+            let url = try await SharedMenuService.createLink(for: result)
+            sharedMenuURL = url
+            sharedMenuShare = SharedMenuShare(url: url)
+        } catch {
+            shareErrorMessage = error.localizedDescription
+            showingShareError = true
+        }
+    }
+
     private func selectionKey(_ item: MenuItem, in sectionID: String) -> String {
         "\(sectionID)|\(item.id)"
     }
@@ -458,7 +513,7 @@ struct ResultsView: View {
 
     @ViewBuilder
     private func itemDestination(_ item: MenuItem, sectionID: String) -> some View {
-        if item.itemType == "wine", let wine = item.wineDetails {
+        if let wine = item.wineDetails {
             WineDetailView(item: item, wine: wine, isInOrder: selectionBinding(item, in: sectionID))
         } else if item.itemType == "drink", let drink = item.drinkDetails {
             DrinkDetailView(item: item, drink: drink, isInOrder: selectionBinding(item, in: sectionID))
@@ -886,7 +941,7 @@ private struct MenuItemRow: View {
     let isInOrder: Bool
     var body: some View {
         Group {
-            if item.itemType == "wine", let wine = item.wineDetails {
+            if let wine = item.wineDetails {
                 wineRow(wine)
             } else {
                 standardRow
@@ -979,6 +1034,12 @@ private struct MenuItemRow: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 32)
+            } else if !item.explanation.isEmpty {
+                Text(item.explanation)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 32)
             }
 
             if !wine.foodPairings.isEmpty {
@@ -1006,8 +1067,7 @@ private struct MenuItemRow: View {
     }
 
     private var rowTitle: String {
-        guard item.itemType == "wine",
-              let producer = item.wineDetails?.producer?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let producer = item.wineDetails?.producer?.trimmingCharacters(in: .whitespacesAndNewlines),
               !producer.isEmpty else {
             return item.originalName
         }
@@ -1015,7 +1075,7 @@ private struct MenuItemRow: View {
     }
 
     private func wineSummary(_ wine: WineDetails, excluding title: String) -> String {
-        [wine.grape, wine.region, wine.vintage]
+        let printedDetails = [wine.grape, wine.region, wine.vintage, wine.style]
             .compactMap { (value: String?) -> String? in
                 guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
                       !value.isEmpty,
@@ -1026,7 +1086,17 @@ private struct MenuItemRow: View {
                 guard !values.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else { return }
                 values.append(value)
             }
-            .joined(separator: " • ")
+        if !printedDetails.isEmpty {
+            return printedDetails.joined(separator: " • ")
+        }
+
+        let profile = [wine.body, wine.sweetness]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !profile.isEmpty {
+            return profile.joined(separator: " • ")
+        }
+        return wine.flavors.prefix(3).joined(separator: " • ")
     }
 }
 
@@ -1480,4 +1550,150 @@ private struct ZoomableReceiptImage: UIViewRepresentable {
             }
         }
     }
+}
+
+private struct TableQRCodeView: View {
+    @Environment(\.dismiss) private var dismiss
+    let result: VemuniScanResult
+    @State private var sharedURL: URL?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 22) {
+                Spacer(minLength: 8)
+                Text(result.restaurantName?.isEmpty == false ? result.restaurantName! : "Shared Menu")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(VemuniTheme.espresso)
+                    .multilineTextAlignment(.center)
+
+                Group {
+                    if let sharedURL, let image = QRCodeRenderer.image(for: sharedURL.absoluteString) {
+                        Image(uiImage: image)
+                            .interpolation(.none)
+                            .resizable()
+                            .scaledToFit()
+                            .padding(18)
+                            .background(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                            .shadow(color: VemuniTheme.espresso.opacity(0.12), radius: 20, y: 8)
+                            .accessibilityLabel("QR code for the shared menu")
+                    } else if let errorMessage {
+                        ContentUnavailableView(
+                            "Couldn’t create QR code",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(errorMessage)
+                        )
+                    } else {
+                        VStack(spacing: 14) {
+                            ProgressView()
+                            Text("Preparing menu link…")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .frame(maxWidth: 360, maxHeight: 360)
+
+                Text("Scan to view this menu")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(VemuniTheme.espresso)
+                Text("The link contains extracted menu text—not the original photos—and does not automatically expire.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                if let sharedURL {
+                    ShareLink(item: sharedURL) {
+                        Label("Share Link", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(VemuniPrimaryButtonStyle())
+
+                    Button {
+                        UIPasteboard.general.url = sharedURL
+                    } label: {
+                        Label("Copy Link", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+                Spacer(minLength: 8)
+            }
+            .padding(24)
+            .background(VemuniTheme.cream.ignoresSafeArea())
+            .navigationTitle("Menu QR Code")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task {
+                guard sharedURL == nil, errorMessage == nil else { return }
+                do {
+                    sharedURL = try await SharedMenuService.createLink(for: result)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+private enum SharedMenuService {
+    static func createLink(for result: VemuniScanResult) async throws -> URL {
+        let encoded = try JSONEncoder().encode(result)
+        guard let menu = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
+            throw SharedMenuError.invalidMenu
+        }
+        let callable = Functions.functions(region: "us-central1").httpsCallable("createSharedMenu")
+        let response = try await callable.call(["menu": menu])
+        guard let payload = response.data as? [String: Any],
+              let value = payload["url"] as? String,
+              let url = URL(string: value) else {
+            throw SharedMenuError.invalidResponse
+        }
+        return url
+    }
+}
+
+private enum SharedMenuError: LocalizedError {
+    case invalidMenu
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidMenu: return "This menu could not be prepared for sharing."
+        case .invalidResponse: return "Vemuni received an invalid sharing response."
+        }
+    }
+}
+
+private enum QRCodeRenderer {
+    static func image(for value: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(value.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        let transformed = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        guard let cgImage = CIContext().createCGImage(transformed, from: transformed.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+}
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private struct SharedMenuShare: Identifiable {
+    let id = UUID()
+    let url: URL
 }

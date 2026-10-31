@@ -1,4 +1,5 @@
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const OpenAI = require("openai");
@@ -10,6 +11,7 @@ const OPENAI_MODEL = "gpt-5.4-mini";
 const FAST_OPENAI_MODEL = "gpt-4.1-mini";
 const INTRODUCTORY_SCANS = 5;
 const MAXIMUM_PAGE_COUNT = 6;
+const SHARED_MENU_BASE_URL = "https://vemuni.bestvaluellc.com/menu/";
 
 exports.getVemuniPlusStatus = onCall(
   {
@@ -33,6 +35,64 @@ exports.getVemuniPlusStatus = onCall(
       overrideEnabled
     });
     return { overrideEnabled };
+  }
+);
+
+exports.createSharedMenu = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 20,
+    invoker: "public"
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Sign in before sharing a menu.");
+    }
+    const menu = sanitizedSharedMenu(request.data?.menu);
+    const id = crypto.randomBytes(9).toString("base64url");
+    await admin.firestore().collection("sharedMenus").doc(id).set({
+      ownerUid: request.auth.uid,
+      menu,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    return {
+      id,
+      url: `${SHARED_MENU_BASE_URL}?id=${encodeURIComponent(id)}`
+    };
+  }
+);
+
+exports.getSharedMenu = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 50,
+    invoker: "public",
+    cors: true
+  },
+  async (request, response) => {
+    if (request.method !== "GET") {
+      response.status(405).json({ error: "Use GET." });
+      return;
+    }
+    const id = String(request.query?.id || "");
+    if (!/^[A-Za-z0-9_-]{12}$/.test(id)) {
+      response.status(400).json({ error: "This menu link is invalid." });
+      return;
+    }
+    const snapshot = await admin.firestore().collection("sharedMenus").doc(id).get();
+    const data = snapshot.data();
+    if (!snapshot.exists || !data?.menu) {
+      response.status(404).json({ error: "This shared menu was not found." });
+      return;
+    }
+    response.set("Cache-Control", "private, max-age=60");
+    response.status(200).json({
+      menu: data.menu
+    });
   }
 );
 
@@ -876,6 +936,91 @@ function sectionRank(section) {
   if (section.sectionType === "drink") return 7;
   if (section.sectionType === "wine") return 10;
   return 11;
+}
+
+function sanitizedSharedMenu(value) {
+  if (!value || value.kind !== "menu" || !Array.isArray(value.menuSections)) {
+    throw new HttpsError("invalid-argument", "Only scanned menus can be shared.");
+  }
+  const sections = value.menuSections.slice(0, 80).map((section) => ({
+    name: sharedString(section?.name, 120),
+    sectionType: sharedNullableString(section?.sectionType, 30),
+    items: (Array.isArray(section?.items) ? section.items : []).slice(0, 250).map((item) => ({
+      originalName: sharedString(item?.originalName, 180),
+      englishName: sharedString(item?.englishName, 180),
+      explanation: sharedString(item?.explanation, 600),
+      price: sharedNullableString(item?.price, 80),
+      itemType: sharedNullableString(item?.itemType, 30),
+      dietary: sharedStringArray(item?.dietary, 20, 80),
+      allergens: sharedStringArray(item?.allergens, 20, 80),
+      spiceLevel: sharedNullableString(item?.spiceLevel, 80),
+      wineDetails: sanitizedSharedWine(item?.wineDetails),
+      drinkDetails: sanitizedSharedDrink(item?.drinkDetails)
+    }))
+  })).filter((section) => section.name && section.items.length);
+  const menu = {
+    kind: "menu",
+    menuType: sharedNullableString(value.menuType, 30),
+    detectedLanguage: sharedString(value.detectedLanguage, 80),
+    notice: sharedString(value.notice, 600),
+    restaurantName: sharedNullableString(value.restaurantName, 160),
+    currencyCode: sharedString(value.currencyCode, 8) || "USD",
+    menuSections: sections,
+    receipt: null,
+    warnings: []
+  };
+  if (!sections.length || JSON.stringify(menu).length > 750_000) {
+    throw new HttpsError("invalid-argument", "This menu is too large to share.");
+  }
+  return menu;
+}
+
+function sanitizedSharedWine(wine) {
+  if (!wine || typeof wine !== "object") return null;
+  return {
+    producer: sharedNullableString(wine.producer, 160),
+    grape: sharedNullableString(wine.grape, 120),
+    region: sharedNullableString(wine.region, 160),
+    country: sharedNullableString(wine.country, 100),
+    vintage: sharedNullableString(wine.vintage, 40),
+    style: sharedNullableString(wine.style, 120),
+    glassPrice: sharedNullableString(wine.glassPrice, 80),
+    bottlePrice: sharedNullableString(wine.bottlePrice, 80),
+    body: sharedNullableString(wine.body, 100),
+    acidity: sharedNullableString(wine.acidity, 100),
+    tannin: sharedNullableString(wine.tannin, 100),
+    sweetness: sharedNullableString(wine.sweetness, 100),
+    alcohol: sharedNullableString(wine.alcohol, 80),
+    flavors: sharedStringArray(wine.flavors, 20, 100),
+    foodPairings: sharedStringArray(wine.foodPairings, 20, 120),
+    servingSuggestion: sharedNullableString(wine.servingSuggestion, 300),
+    profileIsTypical: wine.profileIsTypical === true
+  };
+}
+
+function sanitizedSharedDrink(drink) {
+  if (!drink || typeof drink !== "object") return null;
+  return {
+    drinkType: sharedNullableString(drink.drinkType, 100),
+    baseSpirit: sharedNullableString(drink.baseSpirit, 100),
+    ingredients: sharedStringArray(drink.ingredients, 30, 120),
+    flavorProfile: sharedStringArray(drink.flavorProfile, 20, 100),
+    abv: sharedNullableString(drink.abv, 80)
+  };
+}
+
+function sharedString(value, maximumLength) {
+  return String(value || "").trim().slice(0, maximumLength);
+}
+
+function sharedNullableString(value, maximumLength) {
+  const string = sharedString(value, maximumLength);
+  return string || null;
+}
+
+function sharedStringArray(value, maximumCount, maximumLength) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, maximumCount).map((item) => sharedString(item, maximumLength)).filter(Boolean);
 }
 
 async function authenticatedUser(request) {
