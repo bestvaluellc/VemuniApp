@@ -22,8 +22,6 @@ async function loadMenu() {
     menu = payload.menu;
     document.title = `${menu.restaurantName || "Shared Menu"} — Vemuni`;
     document.querySelector("#restaurant-name").textContent = menu.restaurantName || "Restaurant Menu";
-    const expires = new Date(payload.expiresAt);
-    document.querySelector("#expiry-note").textContent = `Available until ${expires.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}`;
     loading.hidden = true;
     menuApp.hidden = false;
     bindControls();

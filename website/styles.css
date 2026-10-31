@@ -347,6 +347,13 @@ details p { margin-bottom: 0; color: var(--muted); }
   .button { background: #6e321b; color: white; }
   .phone { border-color: rgba(255, 255, 255, 0.18); }
   .menu-card.selected { background: #203629; border-color: #45694f; }
+  .shared-menu-card.selected { background: #203629; border-color: #45694f; }
+  .shared-menu-card.selected .shared-item-top h3,
+  .shared-menu-card.selected .shared-price,
+  .shared-menu-card.selected .shared-translation { color: #f5eadf; }
+  .shared-menu-card.selected .shared-explanation { color: #d7ccc3; }
+  .shared-menu-card.selected .shared-tags span,
+  .shared-menu-card.selected .shared-pick-button { color: #a8d8b4; }
   .legal-body p, .legal-body li { color: #d7ccc3; }
   .statement { background: #27160f; }
   .app-preview { border-color: rgba(237, 148, 87, 0.24); background: rgba(36, 30, 25, 0.96); }
