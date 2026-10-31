@@ -1,11 +1,17 @@
 const API_URL = "https://us-central1-vemuni-d4f87.cloudfunctions.net/getSharedMenu";
+const PICKS_API_URL = "https://us-central1-vemuni-d4f87.cloudfunctions.net/updateTablePicks";
 const params = new URLSearchParams(window.location.search);
 const shareID = params.get("id") || "";
 const picksKey = `vemuni.sharedMenu.${shareID}.picks`;
+const participantKey = `vemuni.sharedMenu.${shareID}.participant`;
 let menu = null;
+let tablePicks = [];
 let activeFilter = "all";
 let query = "";
+let picksSyncGeneration = 0;
 let picks = new Set(JSON.parse(localStorage.getItem(picksKey) || "[]"));
+let participantID = localStorage.getItem(participantKey) || createParticipantID();
+localStorage.setItem(participantKey, participantID);
 
 const loading = document.querySelector("#loading");
 const errorPanel = document.querySelector("#error");
@@ -20,12 +26,14 @@ async function loadMenu() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "This shared menu could not be opened.");
     menu = payload.menu;
+    tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
     document.title = `${menu.restaurantName || "Shared Menu"} — Vemuni`;
     document.querySelector("#restaurant-name").textContent = menu.restaurantName || "Restaurant Menu";
     loading.hidden = true;
     menuApp.hidden = false;
     bindControls();
     render();
+    if (picks.size) syncTablePicks();
   } catch (error) {
     showError(error.message);
   }
@@ -131,6 +139,7 @@ function menuCard(item, key) {
     picks.has(key) ? picks.delete(key) : picks.add(key);
     localStorage.setItem(picksKey, JSON.stringify([...picks]));
     render();
+    syncTablePicks();
   });
   article.append(pickButton);
   return article;
@@ -208,11 +217,48 @@ function updatePicksSummary() {
       picks.delete(key);
       localStorage.setItem(picksKey, JSON.stringify([...picks]));
       render();
+      syncTablePicks();
     });
     row.append(remove);
     picksList.append(row);
   });
   picksList.hidden = pickedItems.length === 0;
+  renderTablePicks();
+}
+
+function renderTablePicks() {
+  const panel = document.querySelector("#table-picks-panel");
+  const list = document.querySelector("#table-picks-list");
+  list.replaceChildren();
+  tablePicks.forEach((pick) => {
+    const row = document.createElement("div");
+    row.className = "shared-table-pick";
+    const name = document.createElement("span");
+    name.textContent = pick.name;
+    const count = document.createElement("span");
+    count.textContent = `${pick.count} ${pick.count === 1 ? "pick" : "picks"}`;
+    row.append(name, count);
+    list.append(row);
+  });
+  panel.hidden = tablePicks.length === 0;
+}
+
+async function syncTablePicks() {
+  const generation = ++picksSyncGeneration;
+  try {
+    const response = await fetch(PICKS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ id: shareID, participantId: participantID, picks: [...picks] })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Table Picks could not be updated.");
+    if (generation !== picksSyncGeneration) return;
+    tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
+    renderTablePicks();
+  } catch (error) {
+    console.warn("Vemuni Table Picks sync failed", error);
+  }
 }
 
 function formatCurrency(value) {
@@ -230,6 +276,12 @@ function normalize(value) {
 function optionalText(value) {
   const text = String(value ?? "").trim();
   return /^(null|undefined|n\/?a|none)$/i.test(text) ? "" : text;
+}
+
+function createParticipantID() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 loadMenu();
