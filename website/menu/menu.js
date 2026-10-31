@@ -168,15 +168,51 @@ function matches(item, sectionName) {
 
 function updatePicksSummary() {
   document.querySelector("#pick-count").textContent = `${picks.size} ${picks.size === 1 ? "item" : "items"}`;
+  const pickedItems = [];
   const selectedPrices = [];
   menu.menuSections.forEach((section, sectionIndex) => section.items.forEach((item, itemIndex) => {
     const key = `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`;
     if (!picks.has(key)) return;
+    pickedItems.push({ key, item });
     const match = String(item.price || "").match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
     if (match) selectedPrices.push(Number(match[1]));
   }));
   const total = selectedPrices.reduce((sum, value) => sum + value, 0);
   document.querySelector("#pick-total").textContent = selectedPrices.length === picks.size && picks.size ? `Estimated ${formatCurrency(total)}` : "";
+
+  const picksList = document.querySelector("#picks-list");
+  picksList.replaceChildren();
+  pickedItems.forEach(({ key, item }) => {
+    const row = document.createElement("div");
+    row.className = "shared-picked-item";
+
+    const name = document.createElement("span");
+    name.className = "shared-picked-name";
+    name.textContent = item.originalName;
+    row.append(name);
+
+    const displayedPrice = optionalText(item.price);
+    if (displayedPrice) {
+      const price = document.createElement("span");
+      price.className = "shared-picked-price";
+      price.textContent = displayedPrice;
+      row.append(price);
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "shared-picked-remove";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove ${item.originalName} from My Picks`);
+    remove.addEventListener("click", () => {
+      picks.delete(key);
+      localStorage.setItem(picksKey, JSON.stringify([...picks]));
+      render();
+    });
+    row.append(remove);
+    picksList.append(row);
+  });
+  picksList.hidden = pickedItems.length === 0;
 }
 
 function formatCurrency(value) {

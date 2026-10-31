@@ -273,6 +273,12 @@ details p { margin-bottom: 0; color: var(--muted); }
 .shared-picks-summary > span:first-child { color: var(--copper); }
 .shared-picks-summary #pick-count { color: var(--muted); }
 .shared-pick-total { margin-left: auto; color: var(--sage) !important; font-weight: 800; }
+.shared-picks-list { margin: 0 8px 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
+.shared-picked-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 46px; padding: 9px 12px; color: var(--espresso); }
+.shared-picked-item + .shared-picked-item { border-top: 1px solid var(--line); }
+.shared-picked-name { overflow: hidden; font-size: 0.88rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.shared-picked-price { color: var(--muted); font-size: 0.82rem; font-weight: 750; }
+.shared-picked-remove { grid-column: 3; padding: 6px 8px; border: 0; color: var(--copper); background: transparent; font: inherit; font-size: 0.78rem; font-weight: 800; cursor: pointer; }
 .shared-search input { width: 100%; min-height: 48px; padding: 0 16px; border: 1px solid var(--line); border-radius: 15px; color: var(--espresso); background: var(--paper); font: inherit; font-size: 1rem; box-shadow: 0 6px 18px rgba(46, 23, 13, 0.04); }
 .shared-search input::placeholder { color: #8d827b; }
 .shared-chips { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; }
