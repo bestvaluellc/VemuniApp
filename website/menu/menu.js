@@ -34,6 +34,7 @@ async function loadMenu() {
     bindControls();
     render();
     if (picks.size) syncTablePicks();
+    window.setInterval(refreshTablePicks, 5000);
   } catch (error) {
     showError(error.message);
   }
@@ -258,6 +259,21 @@ async function syncTablePicks() {
     renderTablePicks();
   } catch (error) {
     console.warn("Vemuni Table Picks sync failed", error);
+  }
+}
+
+async function refreshTablePicks() {
+  try {
+    const response = await fetch(`${API_URL}?id=${encodeURIComponent(shareID)}&picksOnly=1`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    if (!response.ok) return;
+    tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
+    renderTablePicks();
+  } catch {
+    // Keep the last successful counts visible during a temporary connection issue.
   }
 }
 
