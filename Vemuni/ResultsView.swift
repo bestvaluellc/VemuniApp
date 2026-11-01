@@ -22,9 +22,9 @@ struct ResultsView: View {
     @State private var showingDetectionBanner = true
     @State private var showingReceiptImage = false
     @State private var showingShareOptions = false
-    @State private var showingTableQRCode = false
     @State private var showingTextShare = false
-    @State private var sharedMenuURL: URL?
+    @State private var sharedMenuSession: SharedMenuSession?
+    @State private var qrCodeSession: SharedMenuSession?
     @State private var sharedMenuShare: SharedMenuShare?
     @State private var shareErrorMessage = ""
     @State private var showingShareError = false
@@ -89,8 +89,8 @@ struct ResultsView: View {
                 storagePath: receiptImagePath
             )
         }
-        .sheet(isPresented: $showingTableQRCode) {
-            TableQRCodeView(result: result)
+        .sheet(item: $qrCodeSession) { session in
+            TableQRCodeView(result: result, session: session)
         }
         .sheet(isPresented: $showingTextShare) {
             ActivityView(activityItems: [sharedMenuText])
@@ -102,7 +102,9 @@ struct ResultsView: View {
             Button("Share Menu Link") {
                 Task { await shareMenuLink() }
             }
-            Button("Show Menu QR Code") { showingTableQRCode = true }
+            Button("Show Menu QR Code") {
+                Task { await showMenuQRCode() }
+            }
             Button("Share as Plain Text") { showingTextShare = true }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -476,17 +478,37 @@ struct ResultsView: View {
     @MainActor
     private func shareMenuLink() async {
         guard !isCreatingShareLink else { return }
-        if let sharedMenuURL {
+        if let sharedMenuSession {
             try? await Task.sleep(for: .milliseconds(250))
-            sharedMenuShare = SharedMenuShare(url: sharedMenuURL)
+            sharedMenuShare = SharedMenuShare(url: sharedMenuSession.url)
             return
         }
         isCreatingShareLink = true
         defer { isCreatingShareLink = false }
         do {
-            let url = try await SharedMenuService.createLink(for: result)
-            sharedMenuURL = url
-            sharedMenuShare = SharedMenuShare(url: url)
+            let session = try await SharedMenuService.createSession(for: result)
+            sharedMenuSession = session
+            sharedMenuShare = SharedMenuShare(url: session.url)
+        } catch {
+            shareErrorMessage = error.localizedDescription
+            showingShareError = true
+        }
+    }
+
+    @MainActor
+    private func showMenuQRCode() async {
+        guard !isCreatingShareLink else { return }
+        if let sharedMenuSession {
+            try? await Task.sleep(for: .milliseconds(250))
+            qrCodeSession = sharedMenuSession
+            return
+        }
+        isCreatingShareLink = true
+        defer { isCreatingShareLink = false }
+        do {
+            let session = try await SharedMenuService.createSession(for: result)
+            sharedMenuSession = session
+            qrCodeSession = session
         } catch {
             shareErrorMessage = error.localizedDescription
             showingShareError = true
@@ -1555,73 +1577,67 @@ private struct ZoomableReceiptImage: UIViewRepresentable {
 private struct TableQRCodeView: View {
     @Environment(\.dismiss) private var dismiss
     let result: VemuniScanResult
-    @State private var sharedURL: URL?
-    @State private var errorMessage: String?
+    let session: SharedMenuSession
+    @State private var tablePicks: [SharedTablePick] = []
+    @State private var tablePicksError: String?
+    @State private var showingClearConfirmation = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 22) {
-                Spacer(minLength: 8)
-                Text(result.restaurantName?.isEmpty == false ? result.restaurantName! : "Shared Menu")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(VemuniTheme.espresso)
-                    .multilineTextAlignment(.center)
+            ScrollView {
+                VStack(spacing: 22) {
+                    Text(result.restaurantName?.isEmpty == false ? result.restaurantName! : "Shared Menu")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(VemuniTheme.espresso)
+                        .multilineTextAlignment(.center)
 
-                Group {
-                    if let sharedURL, let image = QRCodeRenderer.image(for: sharedURL.absoluteString) {
-                        Image(uiImage: image)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(18)
-                            .background(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 24))
-                            .shadow(color: VemuniTheme.espresso.opacity(0.12), radius: 20, y: 8)
-                            .accessibilityLabel("QR code for the shared menu")
-                    } else if let errorMessage {
-                        ContentUnavailableView(
-                            "Couldn’t create QR code",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(errorMessage)
-                        )
-                    } else {
-                        VStack(spacing: 14) {
-                            ProgressView()
-                            Text("Preparing menu link…")
-                                .foregroundStyle(.secondary)
+                    Group {
+                        if let image = QRCodeRenderer.image(for: session.url.absoluteString) {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(18)
+                                .background(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 24))
+                                .shadow(color: VemuniTheme.espresso.opacity(0.12), radius: 20, y: 8)
+                                .accessibilityLabel("QR code for the shared menu")
+                        } else {
+                            ContentUnavailableView("Couldn’t create QR code", systemImage: "exclamationmark.triangle")
                         }
                     }
-                }
-                .frame(maxWidth: 360, maxHeight: 360)
+                    .frame(maxWidth: 360, maxHeight: 360)
 
-                Text("Scan to view this menu")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(VemuniTheme.espresso)
-                Text("The link contains extracted menu text—not the original photos—and does not automatically expire.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    Text("Scan to view this menu")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(VemuniTheme.espresso)
+                    Text("Guests can add anonymous picks. The link contains extracted menu text—not the original photos—and does not automatically expire.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
 
-                if let sharedURL {
-                    ShareLink(item: sharedURL) {
-                        Label("Share Link", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
+                    Group {
+                        ShareLink(item: session.url) {
+                            Label("Share Link", systemImage: "square.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(VemuniPrimaryButtonStyle())
+
+                        Button {
+                            UIPasteboard.general.url = session.url
+                        } label: {
+                            Label("Copy Link", systemImage: "doc.on.doc")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+
+                        tablePicksView
                     }
-                    .buttonStyle(VemuniPrimaryButtonStyle())
-
-                    Button {
-                        UIPasteboard.general.url = sharedURL
-                    } label: {
-                        Label("Copy Link", systemImage: "doc.on.doc")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
                 }
-                Spacer(minLength: 8)
+                .padding(24)
             }
-            .padding(24)
             .background(VemuniTheme.cream.ignoresSafeArea())
             .navigationTitle("Menu QR Code")
             .navigationBarTitleDisplayMode(.inline)
@@ -1630,20 +1646,92 @@ private struct TableQRCodeView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .task {
-                guard sharedURL == nil, errorMessage == nil else { return }
-                do {
-                    sharedURL = try await SharedMenuService.createLink(for: result)
-                } catch {
-                    errorMessage = error.localizedDescription
+            .task(id: session.id) {
+                while !Task.isCancelled {
+                    await refreshTablePicks(id: session.id)
+                    try? await Task.sleep(for: .seconds(4))
                 }
             }
+            .confirmationDialog("Clear Table Picks?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {
+                Button("Clear Table Picks", role: .destructive) {
+                    Task { await clearTablePicks() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes everyone’s anonymous picks from this shared menu.")
+            }
+        }
+    }
+
+    private var tablePicksView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Table Picks", systemImage: "person.2.fill")
+                    .font(.headline)
+                    .foregroundStyle(VemuniTheme.espresso)
+                Spacer()
+                Button { Task { await refreshTablePicks(id: session.id) } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Refresh Table Picks")
+            }
+            if tablePicks.isEmpty {
+                Text("Waiting for guests to add picks…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(tablePicks) { pick in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(pick.name)
+                            .foregroundStyle(VemuniTheme.espresso)
+                        Spacer(minLength: 12)
+                        Text("\(pick.count) \(pick.count == 1 ? "pick" : "picks")")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(VemuniTheme.sage)
+                    }
+                    .font(.subheadline)
+                }
+                Button("Clear Table Picks", role: .destructive) {
+                    showingClearConfirmation = true
+                }
+                .font(.footnote.weight(.semibold))
+            }
+            if let tablePicksError {
+                Text(tablePicksError)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(VemuniTheme.paper)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
+    @MainActor
+    private func refreshTablePicks(id: String?) async {
+        guard let id else { return }
+        do {
+            tablePicks = try await SharedMenuService.tablePicks(for: id)
+            tablePicksError = nil
+        } catch {
+            tablePicksError = "Couldn’t refresh Table Picks."
+        }
+    }
+
+    @MainActor
+    private func clearTablePicks() async {
+        do {
+            try await SharedMenuService.clearTablePicks(for: session.id)
+            tablePicks = []
+            tablePicksError = nil
+        } catch {
+            tablePicksError = error.localizedDescription
         }
     }
 }
 
 private enum SharedMenuService {
-    static func createLink(for result: VemuniScanResult) async throws -> URL {
+    static func createSession(for result: VemuniScanResult) async throws -> SharedMenuSession {
         let encoded = try JSONEncoder().encode(result)
         guard let menu = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] else {
             throw SharedMenuError.invalidMenu
@@ -1651,12 +1739,53 @@ private enum SharedMenuService {
         let callable = Functions.functions(region: "us-central1").httpsCallable("createSharedMenu")
         let response = try await callable.call(["menu": menu])
         guard let payload = response.data as? [String: Any],
+              let id = payload["id"] as? String,
               let value = payload["url"] as? String,
               let url = URL(string: value) else {
             throw SharedMenuError.invalidResponse
         }
-        return url
+        return SharedMenuSession(id: id, url: url)
     }
+
+    static func createLink(for result: VemuniScanResult) async throws -> URL {
+        try await createSession(for: result).url
+    }
+
+    static func tablePicks(for id: String) async throws -> [SharedTablePick] {
+        var components = URLComponents(string: "https://us-central1-vemuni-d4f87.cloudfunctions.net/getSharedMenu")!
+        components.queryItems = [
+            URLQueryItem(name: "id", value: id),
+            URLQueryItem(name: "picksOnly", value: "1")
+        ]
+        guard let url = components.url else { throw SharedMenuError.invalidResponse }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
+            throw SharedMenuError.invalidResponse
+        }
+        return try JSONDecoder().decode(SharedMenuResponse.self, from: data).tablePicks
+    }
+
+    static func clearTablePicks(for id: String) async throws {
+        let callable = Functions.functions(region: "us-central1").httpsCallable("clearTablePicks")
+        _ = try await callable.call(["id": id])
+    }
+}
+
+private struct SharedMenuSession: Identifiable {
+    let id: String
+    let url: URL
+}
+
+private struct SharedMenuResponse: Decodable {
+    let tablePicks: [SharedTablePick]
+}
+
+private struct SharedTablePick: Decodable, Identifiable {
+    let itemKey: String
+    let name: String
+    let price: String?
+    let count: Int
+    var id: String { itemKey }
 }
 
 private enum SharedMenuError: LocalizedError {

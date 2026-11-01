@@ -89,10 +89,88 @@ exports.getSharedMenu = onRequest(
       response.status(404).json({ error: "This shared menu was not found." });
       return;
     }
-    response.set("Cache-Control", "private, max-age=60");
+    const tablePicks = await aggregatedTablePicks(snapshot.ref, data.menu);
+    response.set("Cache-Control", "no-store");
+    if (String(request.query?.picksOnly || "") === "1") {
+      response.status(200).json({ tablePicks });
+      return;
+    }
     response.status(200).json({
-      menu: data.menu
+      menu: data.menu,
+      tablePicks
     });
+  }
+);
+
+exports.updateTablePicks = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 50,
+    invoker: "public",
+    cors: true
+  },
+  async (request, response) => {
+    if (request.method !== "POST") {
+      response.status(405).json({ error: "Use POST." });
+      return;
+    }
+    const id = String(request.body?.id || "");
+    const participantId = String(request.body?.participantId || "");
+    const requestedPicks = Array.isArray(request.body?.picks) ? request.body.picks.map(String) : [];
+    if (!/^[A-Za-z0-9_-]{12}$/.test(id) || !/^[A-Za-z0-9_-]{20,80}$/.test(participantId)) {
+      response.status(400).json({ error: "This table session is invalid." });
+      return;
+    }
+    if (requestedPicks.length > 100 || requestedPicks.some((key) => key.length > 400)) {
+      response.status(400).json({ error: "Too many table picks." });
+      return;
+    }
+    const menuRef = admin.firestore().collection("sharedMenus").doc(id);
+    const snapshot = await menuRef.get();
+    const menu = snapshot.data()?.menu;
+    if (!snapshot.exists || !menu) {
+      response.status(404).json({ error: "This shared menu was not found." });
+      return;
+    }
+    const validKeys = new Set(sharedMenuEntries(menu).map((entry) => entry.key));
+    const picks = [...new Set(requestedPicks)].filter((key) => validKeys.has(key));
+    const participantDocumentId = crypto.createHash("sha256").update(participantId).digest("hex");
+    const participantRef = menuRef.collection("participants").doc(participantDocumentId);
+    if (picks.length) {
+      await participantRef.set({ picks, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    } else {
+      await participantRef.delete();
+    }
+    response.set("Cache-Control", "no-store");
+    response.status(200).json({ tablePicks: await aggregatedTablePicks(menuRef, menu) });
+  }
+);
+
+exports.clearTablePicks = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 20,
+    invoker: "public"
+  },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in before clearing Table Picks.");
+    const id = String(request.data?.id || "");
+    if (!/^[A-Za-z0-9_-]{12}$/.test(id)) throw new HttpsError("invalid-argument", "This table session is invalid.");
+    const menuRef = admin.firestore().collection("sharedMenus").doc(id);
+    const menuSnapshot = await menuRef.get();
+    if (!menuSnapshot.exists) throw new HttpsError("not-found", "This shared menu was not found.");
+    if (menuSnapshot.data()?.ownerUid !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Only the person who shared this menu can clear Table Picks.");
+    }
+    const participants = await menuRef.collection("participants").limit(500).get();
+    const batch = admin.firestore().batch();
+    participants.docs.forEach((document) => batch.delete(document.ref));
+    if (!participants.empty) await batch.commit();
+    return { cleared: participants.size };
   }
 );
 
@@ -1021,6 +1099,35 @@ function sharedNullableString(value, maximumLength) {
 function sharedStringArray(value, maximumCount, maximumLength) {
   if (!Array.isArray(value)) return [];
   return value.slice(0, maximumCount).map((item) => sharedString(item, maximumLength)).filter(Boolean);
+}
+
+function sharedMenuEntries(menu) {
+  return (Array.isArray(menu?.menuSections) ? menu.menuSections : []).flatMap((section, sectionIndex) =>
+    (Array.isArray(section?.items) ? section.items : []).map((item, itemIndex) => ({
+      key: `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`,
+      name: item.originalName,
+      price: item.price || null
+    }))
+  );
+}
+
+async function aggregatedTablePicks(menuRef, menu) {
+  const entries = sharedMenuEntries(menu);
+  const entryByKey = new Map(entries.map((entry) => [entry.key, entry]));
+  const counts = new Map();
+  const participants = await menuRef.collection("participants")
+    .orderBy("updatedAt", "desc")
+    .limit(100)
+    .get();
+  participants.docs.forEach((document) => {
+    const uniquePicks = new Set(Array.isArray(document.data()?.picks) ? document.data().picks.map(String) : []);
+    uniquePicks.forEach((key) => {
+      if (entryByKey.has(key)) counts.set(key, (counts.get(key) || 0) + 1);
+    });
+  });
+  return [...counts.entries()]
+    .map(([itemKey, count]) => ({ itemKey, ...entryByKey.get(itemKey), count }))
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
 }
 
 async function authenticatedUser(request) {
