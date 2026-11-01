@@ -6,6 +6,7 @@ const picksKey = `vemuni.sharedMenu.${shareID}.picks`;
 const participantKey = `vemuni.sharedMenu.${shareID}.participant`;
 let menu = null;
 let tablePicks = [];
+let participantCount = 0;
 let activeFilter = "all";
 let query = "";
 let picksSyncGeneration = 0;
@@ -27,6 +28,7 @@ async function loadMenu() {
     if (!response.ok) throw new Error(payload.error || "This shared menu could not be opened.");
     menu = payload.menu;
     tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
+    participantCount = Number(payload.participantCount || 0);
     document.title = `${menu.restaurantName || "Shared Menu"} — Vemuni`;
     document.querySelector("#restaurant-name").textContent = menu.restaurantName || "Restaurant Menu";
     loading.hidden = true;
@@ -230,6 +232,7 @@ function updatePicksSummary() {
 function renderTablePicks() {
   const panel = document.querySelector("#table-picks-panel");
   const list = document.querySelector("#table-picks-list");
+  document.querySelector("#table-people-count").textContent = `· ${participantCount} ${participantCount === 1 ? "person" : "people"}`;
   list.replaceChildren();
   tablePicks.forEach((pick) => {
     const row = document.createElement("div");
@@ -256,6 +259,7 @@ async function syncTablePicks() {
     if (!response.ok) throw new Error(payload.error || "Table Picks could not be updated.");
     if (generation !== picksSyncGeneration) return;
     tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
+    participantCount = Number(payload.participantCount || 0);
     renderTablePicks();
   } catch (error) {
     console.warn("Vemuni Table Picks sync failed", error);
@@ -271,6 +275,7 @@ async function refreshTablePicks() {
     const payload = await response.json();
     if (!response.ok) return;
     tablePicks = Array.isArray(payload.tablePicks) ? payload.tablePicks : [];
+    participantCount = Number(payload.participantCount || 0);
     renderTablePicks();
   } catch {
     // Keep the last successful counts visible during a temporary connection issue.
