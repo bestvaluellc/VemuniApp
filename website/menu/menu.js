@@ -356,7 +356,7 @@ function openNameDialog() {
 function updateDisplayNameButton() {
   document.querySelector("#display-name-button").textContent = displayName
     ? `Picking as ${displayName} · Edit`
-    : "Add your name for Table Picks";
+    : "Add your name to Table Picks";
 }
 
 function cleanDisplayName(value) {
