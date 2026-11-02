@@ -4,9 +4,12 @@ const params = new URLSearchParams(window.location.search);
 const shareID = params.get("id") || "";
 const picksKey = `vemuni.sharedMenu.${shareID}.picks`;
 const participantKey = `vemuni.sharedMenu.${shareID}.participant`;
+const displayNameKey = `vemuni.sharedMenu.${shareID}.displayName`;
 let menu = null;
 let tablePicks = [];
 let participantCount = 0;
+let displayName = localStorage.getItem(displayNameKey) || "";
+let pendingPickKey = null;
 let activeFilter = "all";
 let query = "";
 let picksSyncGeneration = 0;
@@ -19,6 +22,8 @@ const errorPanel = document.querySelector("#error");
 const menuApp = document.querySelector("#menu-app");
 const sectionsNode = document.querySelector("#menu-sections");
 const emptyNode = document.querySelector("#empty-results");
+const nameDialog = document.querySelector("#name-dialog");
+const nameInput = document.querySelector("#display-name");
 
 async function loadMenu() {
   if (!/^[A-Za-z0-9_-]{12}$/.test(shareID)) return showError("This menu link is invalid.");
@@ -50,6 +55,28 @@ function showError(message) {
 }
 
 function bindControls() {
+  updateDisplayNameButton();
+  document.querySelector("#display-name-button").addEventListener("click", openNameDialog);
+  document.querySelector("#name-cancel").addEventListener("click", () => {
+    pendingPickKey = null;
+    nameDialog.close();
+  });
+  document.querySelector("#name-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const value = cleanDisplayName(nameInput.value);
+    if (!value) return;
+    displayName = value;
+    localStorage.setItem(displayNameKey, displayName);
+    updateDisplayNameButton();
+    nameDialog.close();
+    if (pendingPickKey) {
+      const key = pendingPickKey;
+      pendingPickKey = null;
+      togglePick(key);
+    } else if (picks.size) {
+      syncTablePicks();
+    }
+  });
   document.querySelector("#menu-search").addEventListener("input", (event) => {
     query = normalize(event.target.value);
     render();
@@ -139,10 +166,12 @@ function menuCard(item, key) {
   pickButton.className = "shared-pick-button";
   pickButton.textContent = picks.has(key) ? "✓ Added to My Picks" : "+ Add to My Picks";
   pickButton.addEventListener("click", () => {
-    picks.has(key) ? picks.delete(key) : picks.add(key);
-    localStorage.setItem(picksKey, JSON.stringify([...picks]));
-    render();
-    syncTablePicks();
+    if (!picks.has(key) && !displayName) {
+      pendingPickKey = key;
+      openNameDialog();
+      return;
+    }
+    togglePick(key);
   });
   article.append(pickButton);
   return article;
@@ -237,11 +266,17 @@ function renderTablePicks() {
   tablePicks.forEach((pick) => {
     const row = document.createElement("div");
     row.className = "shared-table-pick";
+    const copy = document.createElement("span");
+    copy.className = "shared-table-pick-copy";
     const name = document.createElement("span");
     name.textContent = pick.name;
+    const names = document.createElement("span");
+    names.className = "shared-table-names";
+    names.textContent = Array.isArray(pick.pickedBy) ? pick.pickedBy.join(" · ") : "";
+    copy.append(name, names);
     const count = document.createElement("span");
     count.textContent = `${pick.count} ${pick.count === 1 ? "pick" : "picks"}`;
-    row.append(name, count);
+    row.append(copy, count);
     list.append(row);
   });
   panel.hidden = tablePicks.length === 0;
@@ -253,7 +288,7 @@ async function syncTablePicks() {
     const response = await fetch(PICKS_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ id: shareID, participantId: participantID, picks: [...picks] })
+      body: JSON.stringify({ id: shareID, participantId: participantID, displayName, picks: [...picks] })
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Table Picks could not be updated.");
@@ -303,6 +338,29 @@ function createParticipantID() {
   if (crypto.randomUUID) return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(24));
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function togglePick(key) {
+  picks.has(key) ? picks.delete(key) : picks.add(key);
+  localStorage.setItem(picksKey, JSON.stringify([...picks]));
+  render();
+  syncTablePicks();
+}
+
+function openNameDialog() {
+  nameInput.value = displayName;
+  nameDialog.showModal();
+  window.setTimeout(() => nameInput.focus(), 50);
+}
+
+function updateDisplayNameButton() {
+  document.querySelector("#display-name-button").textContent = displayName
+    ? `Picking as ${displayName} · Edit`
+    : "Add your name for Table Picks";
+}
+
+function cleanDisplayName(value) {
+  return String(value || "").replace(/[\u0000-\u001F\u007F]/g, "").replace(/\s+/g, " ").trim().slice(0, 30);
 }
 
 loadMenu();

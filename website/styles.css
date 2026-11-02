@@ -273,6 +273,7 @@ details p { margin-bottom: 0; color: var(--muted); }
 .shared-picks-summary > span:first-child { color: var(--copper); }
 .shared-picks-summary #pick-count { color: var(--muted); }
 .shared-pick-total { margin-left: auto; color: var(--sage) !important; font-weight: 800; }
+.shared-name-button { margin: -4px 14px 12px; padding: 0; border: 0; color: var(--copper); background: transparent; font: inherit; font-size: 0.78rem; font-weight: 800; cursor: pointer; }
 .shared-picks-list { margin: 0 8px 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
 .shared-picked-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 46px; padding: 9px 12px; color: var(--espresso); }
 .shared-picked-item + .shared-picked-item { border-top: 1px solid var(--line); }
@@ -282,7 +283,19 @@ details p { margin-bottom: 0; color: var(--muted); }
 .shared-table-picks { margin: 0 8px 12px; padding: 12px; border: 1px solid rgba(184, 97, 50, 0.2); border-radius: 16px; background: rgba(184, 97, 50, 0.06); color: var(--espresso); }
 .shared-table-picks > strong { color: var(--copper); font-size: 0.84rem; }
 .shared-table-pick { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 8px; font-size: 0.84rem; }
-.shared-table-pick span:last-child { flex: 0 0 auto; color: var(--sage); font-weight: 850; }
+.shared-table-pick > span:last-child { flex: 0 0 auto; color: var(--sage); font-weight: 850; }
+.shared-table-pick-copy { min-width: 0; }
+.shared-table-pick-copy > span { display: block; }
+.shared-table-names { margin-top: 2px; overflow: hidden; color: var(--muted) !important; font-size: 0.73rem; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
+.shared-name-dialog { width: min(440px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 24px; color: var(--espresso); background: var(--paper); box-shadow: var(--shadow); }
+.shared-name-dialog::backdrop { background: rgba(20, 12, 8, 0.55); backdrop-filter: blur(4px); }
+.shared-name-dialog form { padding: 26px; }
+.shared-name-dialog h2 { font-size: 1.7rem; }
+.shared-name-dialog p:not(.eyebrow) { margin: 12px 0 20px; color: var(--muted); font-size: 0.9rem; }
+.shared-name-dialog label { display: block; margin-bottom: 7px; font-size: 0.82rem; font-weight: 800; }
+.shared-name-dialog input { width: 100%; min-height: 50px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; color: var(--espresso); background: var(--cream); font: inherit; }
+.shared-name-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
+.shared-name-actions #name-cancel { padding: 0 12px; border: 0; color: var(--muted); background: transparent; font: inherit; font-weight: 750; cursor: pointer; }
 .shared-search input { width: 100%; min-height: 48px; padding: 0 16px; border: 1px solid var(--line); border-radius: 15px; color: var(--espresso); background: var(--paper); font: inherit; font-size: 1rem; box-shadow: 0 6px 18px rgba(46, 23, 13, 0.04); }
 .shared-search input::placeholder { color: #8d827b; }
 .shared-chips { display: flex; gap: 8px; margin-top: 10px; overflow-x: auto; scrollbar-width: none; }

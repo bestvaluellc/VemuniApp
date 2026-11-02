@@ -43,6 +43,7 @@
           <span id="pick-count">0 items</span>
           <span id="pick-total" class="shared-pick-total"></span>
         </div>
+        <button id="display-name-button" class="shared-name-button" type="button">Add your name for Table Picks</button>
         <div id="picks-list" class="shared-picks-list" aria-live="polite" hidden></div>
         <section id="table-picks-panel" class="shared-table-picks" aria-live="polite" hidden>
           <strong>Table Picks <span id="table-people-count"></span></strong>
@@ -77,6 +78,19 @@
       <div class="footer-links"><a href="/privacy/">Privacy</a><a href="/support/">Support</a></div>
     </div>
   </footer>
+  <dialog id="name-dialog" class="shared-name-dialog">
+    <form id="name-form" method="dialog">
+      <p class="eyebrow">Table Picks</p>
+      <h2>What should the table call you?</h2>
+      <p>Use a first name, nickname, or initials. No account is required.</p>
+      <label for="display-name">Your table name</label>
+      <input id="display-name" name="displayName" type="text" maxlength="30" placeholder="Mike W." autocomplete="nickname" required>
+      <div class="shared-name-actions">
+        <button id="name-cancel" type="button">Cancel</button>
+        <button class="button" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
   <script src="/menu/menu.js" defer></script>
 </body>
 </html>
