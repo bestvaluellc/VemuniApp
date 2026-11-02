@@ -1675,7 +1675,7 @@ private struct TableQRCodeView: View {
                     Text("Scan to view this menu")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(VemuniTheme.espresso)
-                    Text("Guests can add anonymous picks. The link contains extracted menu text—not the original photos—and does not automatically expire.")
+                    Text("Guests can add picks using a first name and last initial. The link contains extracted menu text—not the original photos—and does not automatically expire.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -1718,6 +1718,8 @@ private struct TablePicksView: View {
     @State private var summary = SharedTablePicksResponse.empty
     @State private var errorMessage: String?
     @State private var showingClearConfirmation = false
+    @State private var participantPendingRemoval: SharedTableParticipant?
+    @State private var showingRemoveConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -1745,10 +1747,17 @@ private struct TablePicksView: View {
                         .padding(.vertical, 36)
                     } else {
                         ForEach(summary.tablePicks) { pick in
-                            HStack(spacing: 14) {
-                                Text(pick.name)
-                                    .font(.title3.weight(.semibold))
-                                    .foregroundStyle(VemuniTheme.espresso)
+                            HStack(alignment: .top, spacing: 14) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(pick.name)
+                                        .font(.title3.weight(.semibold))
+                                        .foregroundStyle(VemuniTheme.espresso)
+                                    if !pick.pickedBy.isEmpty {
+                                        Text(pick.pickedBy.joined(separator: " · "))
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                                 Spacer(minLength: 10)
                                 Text("\(pick.count) \(pick.count == 1 ? "pick" : "picks")")
                                     .font(.headline)
@@ -1763,6 +1772,32 @@ private struct TablePicksView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 20))
                         }
 
+                        if !summary.tableParticipants.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Diners")
+                                    .font(.headline)
+                                    .foregroundStyle(VemuniTheme.espresso)
+                                ForEach(summary.tableParticipants) { participant in
+                                    HStack {
+                                        Text(participant.displayName)
+                                            .foregroundStyle(VemuniTheme.espresso)
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            participantPendingRemoval = participant
+                                            showingRemoveConfirmation = true
+                                        } label: {
+                                            Image(systemName: "trash")
+                                        }
+                                        .accessibilityLabel("Remove \(participant.displayName)")
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                            .padding(18)
+                            .background(VemuniTheme.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                        }
+
                         Button("Clear Table Picks", role: .destructive) {
                             showingClearConfirmation = true
                         }
@@ -1771,7 +1806,7 @@ private struct TablePicksView: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    Text("Picks are anonymous.")
+                    Text("Guests enter a first name and last initial. No account is required.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     if let errorMessage {
@@ -1806,7 +1841,15 @@ private struct TablePicksView: View {
                 Button("Clear Table Picks", role: .destructive) { Task { await clear() } }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes everyone’s anonymous picks from this shared menu.")
+                Text("This removes everyone’s picks from this shared menu.")
+            }
+            .confirmationDialog("Remove diner?", isPresented: $showingRemoveConfirmation, titleVisibility: .visible) {
+                Button("Remove \(participantPendingRemoval?.displayName ?? "Diner")", role: .destructive) {
+                    Task { await removeParticipant() }
+                }
+                Button("Cancel", role: .cancel) { participantPendingRemoval = nil }
+            } message: {
+                Text("This removes that browser’s picks from the table.")
             }
         }
     }
@@ -1827,6 +1870,18 @@ private struct TablePicksView: View {
             try await SharedMenuService.clearTablePicks(for: session.id)
             summary = .empty
             errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func removeParticipant() async {
+        guard let participant = participantPendingRemoval else { return }
+        do {
+            try await SharedMenuService.removeParticipant(participant.id, from: session.id)
+            participantPendingRemoval = nil
+            await refresh()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1872,6 +1927,11 @@ private enum SharedMenuService {
         let callable = Functions.functions(region: "us-central1").httpsCallable("clearTablePicks")
         _ = try await callable.call(["id": id])
     }
+
+    static func removeParticipant(_ participantId: String, from id: String) async throws {
+        let callable = Functions.functions(region: "us-central1").httpsCallable("removeTableParticipant")
+        _ = try await callable.call(["id": id, "participantId": participantId])
+    }
 }
 
 private struct SharedMenuSession: Identifiable {
@@ -1882,8 +1942,24 @@ private struct SharedMenuSession: Identifiable {
 private struct SharedTablePicksResponse: Decodable {
     let tablePicks: [SharedTablePick]
     let participantCount: Int
+    let tableParticipants: [SharedTableParticipant]
 
-    static let empty = SharedTablePicksResponse(tablePicks: [], participantCount: 0)
+    static let empty = SharedTablePicksResponse(tablePicks: [], participantCount: 0, tableParticipants: [])
+
+    private enum CodingKeys: String, CodingKey { case tablePicks, participantCount, tableParticipants }
+
+    init(tablePicks: [SharedTablePick], participantCount: Int, tableParticipants: [SharedTableParticipant]) {
+        self.tablePicks = tablePicks
+        self.participantCount = participantCount
+        self.tableParticipants = tableParticipants
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tablePicks = try container.decodeIfPresent([SharedTablePick].self, forKey: .tablePicks) ?? []
+        participantCount = try container.decodeIfPresent(Int.self, forKey: .participantCount) ?? 0
+        tableParticipants = try container.decodeIfPresent([SharedTableParticipant].self, forKey: .tableParticipants) ?? []
+    }
 
     var totalPickCount: Int { tablePicks.reduce(0) { $0 + $1.count } }
 
@@ -1899,7 +1975,25 @@ private struct SharedTablePick: Decodable, Identifiable {
     let name: String
     let price: String?
     let count: Int
+    let pickedBy: [String]
     var id: String { itemKey }
+
+    private enum CodingKeys: String, CodingKey { case itemKey, name, price, count, pickedBy }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        itemKey = try container.decode(String.self, forKey: .itemKey)
+        name = try container.decode(String.self, forKey: .name)
+        price = try container.decodeIfPresent(String.self, forKey: .price)
+        count = try container.decode(Int.self, forKey: .count)
+        pickedBy = try container.decodeIfPresent([String].self, forKey: .pickedBy) ?? []
+    }
+}
+
+private struct SharedTableParticipant: Decodable, Identifiable {
+    let participantId: String
+    let displayName: String
+    var id: String { participantId }
 }
 
 private enum SharedMenuError: LocalizedError {

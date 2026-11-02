@@ -118,6 +118,7 @@ exports.updateTablePicks = onRequest(
     }
     const id = String(request.body?.id || "");
     const participantId = String(request.body?.participantId || "");
+    const displayName = sharedDisplayName(request.body?.displayName) || "Guest";
     const requestedPicks = Array.isArray(request.body?.picks) ? request.body.picks.map(String) : [];
     if (!/^[A-Za-z0-9_-]{12}$/.test(id) || !/^[A-Za-z0-9_-]{20,80}$/.test(participantId)) {
       response.status(400).json({ error: "This table session is invalid." });
@@ -139,7 +140,7 @@ exports.updateTablePicks = onRequest(
     const participantDocumentId = crypto.createHash("sha256").update(participantId).digest("hex");
     const participantRef = menuRef.collection("participants").doc(participantDocumentId);
     if (picks.length) {
-      await participantRef.set({ picks, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      await participantRef.set({ displayName, picks, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
     } else {
       await participantRef.delete();
     }
@@ -171,6 +172,32 @@ exports.clearTablePicks = onCall(
     participants.docs.forEach((document) => batch.delete(document.ref));
     if (!participants.empty) await batch.commit();
     return { cleared: participants.size };
+  }
+);
+
+exports.removeTableParticipant = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 15,
+    memory: "256MiB",
+    maxInstances: 20,
+    invoker: "public"
+  },
+  async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Sign in before removing a diner.");
+    const id = String(request.data?.id || "");
+    const participantId = String(request.data?.participantId || "");
+    if (!/^[A-Za-z0-9_-]{12}$/.test(id) || !/^[a-f0-9]{64}$/.test(participantId)) {
+      throw new HttpsError("invalid-argument", "This diner is invalid.");
+    }
+    const menuRef = admin.firestore().collection("sharedMenus").doc(id);
+    const menuSnapshot = await menuRef.get();
+    if (!menuSnapshot.exists) throw new HttpsError("not-found", "This shared menu was not found.");
+    if (menuSnapshot.data()?.ownerUid !== request.auth.uid) {
+      throw new HttpsError("permission-denied", "Only the person who shared this menu can remove a diner.");
+    }
+    await menuRef.collection("participants").doc(participantId).delete();
+    return { removed: true };
   }
 );
 
@@ -1101,6 +1128,14 @@ function sharedStringArray(value, maximumCount, maximumLength) {
   return value.slice(0, maximumCount).map((item) => sharedString(item, maximumLength)).filter(Boolean);
 }
 
+function sharedDisplayName(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30);
+}
+
 function sharedMenuEntries(menu) {
   return (Array.isArray(menu?.menuSections) ? menu.menuSections : []).flatMap((section, sectionIndex) =>
     (Array.isArray(section?.items) ? section.items : []).map((item, itemIndex) => ({
@@ -1119,16 +1154,29 @@ async function aggregatedTablePicks(menuRef, menu) {
     .orderBy("updatedAt", "desc")
     .limit(100)
     .get();
-  participants.docs.forEach((document) => {
+  const tableParticipants = participants.docs.map((document) => {
+    const displayName = sharedDisplayName(document.data()?.displayName) || "Guest";
     const uniquePicks = new Set(Array.isArray(document.data()?.picks) ? document.data().picks.map(String) : []);
+    const participantPicks = [];
     uniquePicks.forEach((key) => {
-      if (entryByKey.has(key)) counts.set(key, (counts.get(key) || 0) + 1);
+      const entry = entryByKey.get(key);
+      if (!entry) return;
+      participantPicks.push(entry);
+      const aggregate = counts.get(key) || { count: 0, pickedBy: [] };
+      aggregate.count += 1;
+      aggregate.pickedBy.push(displayName);
+      counts.set(key, aggregate);
     });
+    return {
+      participantId: document.id,
+      displayName,
+      picks: participantPicks
+    };
   });
   const tablePicks = [...counts.entries()]
-    .map(([itemKey, count]) => ({ itemKey, ...entryByKey.get(itemKey), count }))
+    .map(([itemKey, aggregate]) => ({ itemKey, ...entryByKey.get(itemKey), ...aggregate }))
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
-  return { tablePicks, participantCount: participants.size };
+  return { tablePicks, participantCount: tableParticipants.length, tableParticipants };
 }
 
 async function authenticatedUser(request) {
