@@ -50,9 +50,27 @@ struct SavedVisitRecord: Identifiable, Equatable {
     let pageCount: Int
     let receiptImagePath: String?
     let menuPicks: [SavedMenuPick]
+    let sharedMenuID: String?
+    let sharedMenuURL: String?
 }
 
 struct VisitStorageService {
+    func saveSharedMenuSession(id: String, url: URL, for visitId: String) async throws {
+        guard let userId = Auth.auth().currentUser?.uid else {
+            throw VisitStorageError.notSignedIn
+        }
+        try await Firestore.firestore()
+            .collection("users")
+            .document(userId)
+            .collection("visits")
+            .document(visitId)
+            .updateData([
+                "sharedMenuID": id,
+                "sharedMenuURL": url.absoluteString,
+                "updatedAt": FieldValue.serverTimestamp()
+            ])
+    }
+
     func saveMenuPicks(_ picks: [SavedMenuPick], for visitId: String) async throws {
         guard let userId = Auth.auth().currentUser?.uid else {
             throw VisitStorageError.notSignedIn
@@ -146,7 +164,9 @@ struct VisitStorageService {
                 createdAt: (data["createdAt"] as? Timestamp)?.dateValue(),
                 pageCount: data["pageCount"] as? Int ?? 1,
                 receiptImagePath: data["receiptImagePath"] as? String,
-                menuPicks: menuPicks
+                menuPicks: menuPicks,
+                sharedMenuID: data["sharedMenuID"] as? String,
+                sharedMenuURL: data["sharedMenuURL"] as? String
             )
         }
     }

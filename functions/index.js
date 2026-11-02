@@ -89,15 +89,15 @@ exports.getSharedMenu = onRequest(
       response.status(404).json({ error: "This shared menu was not found." });
       return;
     }
-    const tablePicks = await aggregatedTablePicks(snapshot.ref, data.menu);
+    const tableSummary = await aggregatedTablePicks(snapshot.ref, data.menu);
     response.set("Cache-Control", "no-store");
     if (String(request.query?.picksOnly || "") === "1") {
-      response.status(200).json({ tablePicks });
+      response.status(200).json(tableSummary);
       return;
     }
     response.status(200).json({
       menu: data.menu,
-      tablePicks
+      ...tableSummary
     });
   }
 );
@@ -144,7 +144,7 @@ exports.updateTablePicks = onRequest(
       await participantRef.delete();
     }
     response.set("Cache-Control", "no-store");
-    response.status(200).json({ tablePicks: await aggregatedTablePicks(menuRef, menu) });
+    response.status(200).json(await aggregatedTablePicks(menuRef, menu));
   }
 );
 
@@ -268,7 +268,7 @@ exports.analyzeDiningPhoto = onRequest(
       response.status(200).json(result);
     } catch (error) {
       console.error("Vemuni scan failed", error);
-      response.status(500).json({ error: "Vemuni could not read this image. Try a clearer, closer photo." });
+      response.status(500).json({ error: "Scanning is temporarily unavailable. Please try again shortly." });
     }
   }
 );
@@ -373,7 +373,7 @@ exports.analyzeDiningPhotoFast = onRequest(
       response.status(200).json(result);
     } catch (error) {
       console.error("Vemuni fast scan failed", error);
-      response.status(500).json({ error: "Vemuni could not read this image. Try a clearer, closer photo." });
+      response.status(500).json({ error: "Scanning is temporarily unavailable. Please try again shortly." });
     }
   }
 );
@@ -1125,9 +1125,10 @@ async function aggregatedTablePicks(menuRef, menu) {
       if (entryByKey.has(key)) counts.set(key, (counts.get(key) || 0) + 1);
     });
   });
-  return [...counts.entries()]
+  const tablePicks = [...counts.entries()]
     .map(([itemKey, count]) => ({ itemKey, ...entryByKey.get(itemKey), count }))
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  return { tablePicks, participantCount: participants.size };
 }
 
 async function authenticatedUser(request) {

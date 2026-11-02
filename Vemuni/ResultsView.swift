@@ -29,6 +29,8 @@ struct ResultsView: View {
     @State private var shareErrorMessage = ""
     @State private var showingShareError = false
     @State private var isCreatingShareLink = false
+    @State private var showingTablePicks = false
+    @State private var tablePicksSummary = SharedTablePicksResponse.empty
 
     init(
         result: VemuniScanResult,
@@ -36,7 +38,9 @@ struct ResultsView: View {
         receiptImage: UIImage? = nil,
         receiptImagePath: String? = nil,
         savedVisitID: String? = nil,
-        initialMenuPicks: [SavedMenuPick] = []
+        initialMenuPicks: [SavedMenuPick] = [],
+        initialSharedMenuID: String? = nil,
+        initialSharedMenuURL: String? = nil
     ) {
         self.result = result
         self.saveState = saveState
@@ -44,6 +48,11 @@ struct ResultsView: View {
         self.receiptImagePath = receiptImagePath
         self.savedVisitID = savedVisitID
         _selectedItemIDs = State(initialValue: Set(initialMenuPicks.map(\.selectionKey)))
+        if let initialSharedMenuID,
+           let initialSharedMenuURL,
+           let url = URL(string: initialSharedMenuURL) {
+            _sharedMenuSession = State(initialValue: SharedMenuSession(id: initialSharedMenuID, url: url))
+        }
     }
 
     var body: some View {
@@ -98,6 +107,11 @@ struct ResultsView: View {
         .sheet(item: $sharedMenuShare) { share in
             ActivityView(activityItems: [share.url])
         }
+        .sheet(isPresented: $showingTablePicks) {
+            if let sharedMenuSession {
+                TablePicksView(session: sharedMenuSession)
+            }
+        }
         .confirmationDialog("Share menu", isPresented: $showingShareOptions, titleVisibility: .visible) {
             Button("Share Menu Link") {
                 Task { await shareMenuLink() }
@@ -130,6 +144,17 @@ struct ResultsView: View {
             guard result.kind != ScanMode.receipt.rawValue, let savedVisitID else { return }
             try? await Task.sleep(for: .milliseconds(350))
             try? await VisitStorageService().saveMenuPicks(menuPickSnapshots, for: savedVisitID)
+        }
+        .task(id: sharedMenuSession?.id) {
+            guard let id = sharedMenuSession?.id else { return }
+            while !Task.isCancelled {
+                await refreshTablePicksSummary(id: id)
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
+        .onChange(of: savedVisitID) { _, newValue in
+            guard let newValue, let sharedMenuSession else { return }
+            Task { try? await VisitStorageService().saveSharedMenuSession(id: sharedMenuSession.id, url: sharedMenuSession.url, for: newValue) }
         }
         .toolbar {
             if result.kind != ScanMode.receipt.rawValue {
@@ -269,6 +294,10 @@ struct ResultsView: View {
                 orderBar
                 Divider().opacity(0.45)
             }
+            if sharedMenuSession != nil {
+                tablePicksBar
+                Divider().opacity(0.45)
+            }
             menuFilters
         }
         .background(.bar)
@@ -305,6 +334,30 @@ struct ResultsView: View {
             .currency(code: result.currencyCode.isEmpty ? "USD" : result.currencyCode)
         )
         return prices.count == selectedItems.count ? formattedTotal : "\(formattedTotal)+"
+    }
+
+    private var tablePicksBar: some View {
+        Button { showingTablePicks = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "person.2.fill")
+                    .foregroundStyle(VemuniTheme.copper)
+                Text("Table Picks").fontWeight(.semibold)
+                Spacer()
+                Text(tablePicksSummary.compactSummary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.subheadline)
+            .foregroundStyle(VemuniTheme.espresso)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Show Table Picks, \(tablePicksSummary.compactSummary)")
     }
 
     private var menuFilters: some View {
@@ -488,6 +541,7 @@ struct ResultsView: View {
         do {
             let session = try await SharedMenuService.createSession(for: result)
             sharedMenuSession = session
+            await persistSharedMenuSession(session)
             sharedMenuShare = SharedMenuShare(url: session.url)
         } catch {
             shareErrorMessage = error.localizedDescription
@@ -508,11 +562,24 @@ struct ResultsView: View {
         do {
             let session = try await SharedMenuService.createSession(for: result)
             sharedMenuSession = session
+            await persistSharedMenuSession(session)
             qrCodeSession = session
         } catch {
             shareErrorMessage = error.localizedDescription
             showingShareError = true
         }
+    }
+
+    @MainActor
+    private func refreshTablePicksSummary(id: String) async {
+        if let summary = try? await SharedMenuService.tablePicks(for: id) {
+            tablePicksSummary = summary
+        }
+    }
+
+    private func persistSharedMenuSession(_ session: SharedMenuSession) async {
+        guard let savedVisitID else { return }
+        try? await VisitStorageService().saveSharedMenuSession(id: session.id, url: session.url, for: savedVisitID)
     }
 
     private func selectionKey(_ item: MenuItem, in sectionID: String) -> String {
@@ -1578,9 +1645,6 @@ private struct TableQRCodeView: View {
     @Environment(\.dismiss) private var dismiss
     let result: VemuniScanResult
     let session: SharedMenuSession
-    @State private var tablePicks: [SharedTablePick] = []
-    @State private var tablePicksError: String?
-    @State private var showingClearConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -1632,8 +1696,6 @@ private struct TableQRCodeView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
-
-                        tablePicksView
                     }
                 }
                 .padding(24)
@@ -1646,16 +1708,102 @@ private struct TableQRCodeView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+private struct TablePicksView: View {
+    @Environment(\.dismiss) private var dismiss
+    let session: SharedMenuSession
+    @State private var summary = SharedTablePicksResponse.empty
+    @State private var errorMessage: String?
+    @State private var showingClearConfirmation = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 18) {
+                    VStack(spacing: 7) {
+                        Label(summary.compactSummary, systemImage: "person.2.fill")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(VemuniTheme.sage)
+                        Text("Updates automatically")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(22)
+                    .background(VemuniTheme.sage.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+
+                    if summary.tablePicks.isEmpty {
+                        ContentUnavailableView(
+                            "Waiting for your table…",
+                            systemImage: "person.2.fill",
+                            description: Text("Ask everyone to add items to My Picks from the shared menu.")
+                        )
+                        .padding(.vertical, 36)
+                    } else {
+                        ForEach(summary.tablePicks) { pick in
+                            HStack(spacing: 14) {
+                                Text(pick.name)
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(VemuniTheme.espresso)
+                                Spacer(minLength: 10)
+                                Text("\(pick.count) \(pick.count == 1 ? "pick" : "picks")")
+                                    .font(.headline)
+                                    .foregroundStyle(pick.count == 1 ? VemuniTheme.sage : VemuniTheme.copper)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background((pick.count == 1 ? VemuniTheme.sage : VemuniTheme.copper).opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            .padding(18)
+                            .background(VemuniTheme.paper)
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                        }
+
+                        Button("Clear Table Picks", role: .destructive) {
+                            showingClearConfirmation = true
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .frame(maxWidth: .infinity)
+                    }
+
+                    Text("Picks are anonymous.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(20)
+            }
+            .background(VemuniTheme.cream.ignoresSafeArea())
+            .navigationTitle("Table Picks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { Task { await refresh() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel("Refresh Table Picks")
+                }
+            }
             .task(id: session.id) {
                 while !Task.isCancelled {
-                    await refreshTablePicks(id: session.id)
+                    await refresh()
                     try? await Task.sleep(for: .seconds(4))
                 }
             }
             .confirmationDialog("Clear Table Picks?", isPresented: $showingClearConfirmation, titleVisibility: .visible) {
-                Button("Clear Table Picks", role: .destructive) {
-                    Task { await clearTablePicks() }
-                }
+                Button("Clear Table Picks", role: .destructive) { Task { await clear() } }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This removes everyone’s anonymous picks from this shared menu.")
@@ -1663,69 +1811,24 @@ private struct TableQRCodeView: View {
         }
     }
 
-    private var tablePicksView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("Table Picks", systemImage: "person.2.fill")
-                    .font(.headline)
-                    .foregroundStyle(VemuniTheme.espresso)
-                Spacer()
-                Button { Task { await refreshTablePicks(id: session.id) } } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .accessibilityLabel("Refresh Table Picks")
-            }
-            if tablePicks.isEmpty {
-                Text("Waiting for guests to add picks…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(tablePicks) { pick in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(pick.name)
-                            .foregroundStyle(VemuniTheme.espresso)
-                        Spacer(minLength: 12)
-                        Text("\(pick.count) \(pick.count == 1 ? "pick" : "picks")")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(VemuniTheme.sage)
-                    }
-                    .font(.subheadline)
-                }
-                Button("Clear Table Picks", role: .destructive) {
-                    showingClearConfirmation = true
-                }
-                .font(.footnote.weight(.semibold))
-            }
-            if let tablePicksError {
-                Text(tablePicksError)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(16)
-        .background(VemuniTheme.paper)
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-    }
-
     @MainActor
-    private func refreshTablePicks(id: String?) async {
-        guard let id else { return }
+    private func refresh() async {
         do {
-            tablePicks = try await SharedMenuService.tablePicks(for: id)
-            tablePicksError = nil
+            summary = try await SharedMenuService.tablePicks(for: session.id)
+            errorMessage = nil
         } catch {
-            tablePicksError = "Couldn’t refresh Table Picks."
+            errorMessage = "Couldn’t refresh Table Picks. Trying again…"
         }
     }
 
     @MainActor
-    private func clearTablePicks() async {
+    private func clear() async {
         do {
             try await SharedMenuService.clearTablePicks(for: session.id)
-            tablePicks = []
-            tablePicksError = nil
+            summary = .empty
+            errorMessage = nil
         } catch {
-            tablePicksError = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -1751,7 +1854,7 @@ private enum SharedMenuService {
         try await createSession(for: result).url
     }
 
-    static func tablePicks(for id: String) async throws -> [SharedTablePick] {
+    static func tablePicks(for id: String) async throws -> SharedTablePicksResponse {
         var components = URLComponents(string: "https://us-central1-vemuni-d4f87.cloudfunctions.net/getSharedMenu")!
         components.queryItems = [
             URLQueryItem(name: "id", value: id),
@@ -1762,7 +1865,7 @@ private enum SharedMenuService {
         guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
             throw SharedMenuError.invalidResponse
         }
-        return try JSONDecoder().decode(SharedMenuResponse.self, from: data).tablePicks
+        return try JSONDecoder().decode(SharedTablePicksResponse.self, from: data)
     }
 
     static func clearTablePicks(for id: String) async throws {
@@ -1776,8 +1879,19 @@ private struct SharedMenuSession: Identifiable {
     let url: URL
 }
 
-private struct SharedMenuResponse: Decodable {
+private struct SharedTablePicksResponse: Decodable {
     let tablePicks: [SharedTablePick]
+    let participantCount: Int
+
+    static let empty = SharedTablePicksResponse(tablePicks: [], participantCount: 0)
+
+    var totalPickCount: Int { tablePicks.reduce(0) { $0 + $1.count } }
+
+    var compactSummary: String {
+        let people = "\(participantCount) \(participantCount == 1 ? "person" : "people")"
+        let picks = "\(totalPickCount) total \(totalPickCount == 1 ? "pick" : "picks")"
+        return "\(people) · \(picks)"
+    }
 }
 
 private struct SharedTablePick: Decodable, Identifiable {

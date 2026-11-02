@@ -66,7 +66,9 @@ struct SavedScansView: View {
                             saveState: nil,
                             receiptImagePath: visit.receiptImagePath,
                             savedVisitID: visit.id,
-                            initialMenuPicks: visit.menuPicks
+                            initialMenuPicks: visit.menuPicks,
+                            initialSharedMenuID: visit.sharedMenuID,
+                            initialSharedMenuURL: visit.sharedMenuURL
                         )
                             .navigationTitle(visit.title)
                             .navigationBarTitleDisplayMode(.inline)
