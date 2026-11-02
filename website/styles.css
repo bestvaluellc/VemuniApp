@@ -207,7 +207,7 @@ h3 { margin: 0 0 8px; font-size: 1.5rem; }
 .section { padding: 100px 0; }
 .section-heading { max-width: 760px; }
 .section-heading p { margin: 22px 0 0; font-size: 1.15rem; color: var(--muted); }
-.feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 52px; }
+.feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 20px; margin-top: 52px; }
 .feature { min-height: 280px; padding: 30px; border: 1px solid var(--line); border-radius: 28px; background: var(--paper); }
 .feature-number { color: var(--copper); font-weight: 800; font-size: 0.85rem; }
 .feature h3 { margin-top: 42px; }
