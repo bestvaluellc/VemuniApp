@@ -278,7 +278,22 @@ function updatePicksSummary() {
 function renderTablePicks() {
   const panel = document.querySelector("#table-picks-panel");
   const list = document.querySelector("#table-picks-list");
-  document.querySelector("#table-people-count").textContent = `· ${participantCount} ${participantCount === 1 ? "person" : "people"}`;
+  document.querySelector("#table-people-count").textContent = `${participantCount} ${participantCount === 1 ? "person" : "people"}`;
+  const totalPickCount = tablePicks.reduce((total, pick) => total + Number(pick.count || 0), 0);
+  let pricedPickCount = 0;
+  let estimatedTotal = 0;
+  tablePicks.forEach((pick) => {
+    const numericPrice = numericItemPrice(pick.price);
+    if (numericPrice === null) return;
+    const count = Number(pick.count || 0);
+    pricedPickCount += count;
+    estimatedTotal += numericPrice * count;
+  });
+  const itemLabel = `${totalPickCount} ${totalPickCount === 1 ? "item" : "items"}`;
+  const totalLabel = pricedPickCount
+    ? ` · ${formatCurrency(estimatedTotal)}${pricedPickCount === totalPickCount ? "" : "+"}`
+    : "";
+  document.querySelector("#table-picks-summary").textContent = `${itemLabel}${totalLabel}`;
   list.replaceChildren();
   tablePicks.forEach((pick) => {
     const row = document.createElement("div");
@@ -287,13 +302,25 @@ function renderTablePicks() {
     copy.className = "shared-table-pick-copy";
     const name = document.createElement("span");
     name.textContent = pick.name;
+    const displayedPrice = formatItemPrice(pick.price);
     const names = document.createElement("span");
     names.className = "shared-table-names";
     names.textContent = Array.isArray(pick.pickedBy) ? pick.pickedBy.join(" · ") : "";
-    copy.append(name, names);
+    copy.append(name);
+    copy.append(names);
+    const meta = document.createElement("span");
+    meta.className = "shared-table-pick-meta";
+    if (displayedPrice) {
+      const price = document.createElement("span");
+      price.className = "shared-table-price";
+      price.textContent = displayedPrice;
+      meta.append(price);
+    }
     const count = document.createElement("span");
+    count.className = "shared-table-count";
     count.textContent = `${pick.count} ${pick.count === 1 ? "pick" : "picks"}`;
-    row.append(copy, count);
+    meta.append(count);
+    row.append(copy, meta);
     list.append(row);
   });
   panel.hidden = tablePicks.length === 0;
@@ -336,10 +363,28 @@ async function refreshTablePicks() {
 
 function formatCurrency(value) {
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: menu.currencyCode || "USD", maximumFractionDigits: 2 }).format(value);
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: menu.currencyCode || "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(value);
   } catch {
     return `$${value.toFixed(2)}`;
   }
+}
+
+function formatItemPrice(value) {
+  const text = optionalText(value);
+  if (!text) return "";
+  const match = text.match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
+  return match ? formatCurrency(Number(match[1])) : text;
+}
+
+function numericItemPrice(value) {
+  const text = optionalText(value);
+  const match = text.match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
+  return match ? Number(match[1]) : null;
 }
 
 function normalize(value) {

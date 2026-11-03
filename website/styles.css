@@ -280,14 +280,21 @@ details p { margin-bottom: 0; color: var(--muted); }
 .shared-picked-name { overflow: hidden; font-size: 0.88rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .shared-picked-price { color: var(--muted); font-size: 0.82rem; font-weight: 750; }
 .shared-picked-remove { grid-column: 3; padding: 6px 8px; border: 0; color: var(--copper); background: transparent; font: inherit; font-size: 0.78rem; font-weight: 800; cursor: pointer; }
-.shared-table-picks { margin: 0 8px 12px; padding: 12px; border: 1px solid rgba(184, 97, 50, 0.2); border-radius: 16px; background: rgba(184, 97, 50, 0.06); color: var(--espresso); }
-.shared-table-picks > strong { color: var(--copper); font-size: 0.84rem; }
-.shared-table-pick { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 8px; font-size: 0.84rem; }
-.shared-table-pick > span:last-child { flex: 0 0 auto; color: var(--sage); font-weight: 850; }
-.shared-table-pick-copy { min-width: 0; }
+.shared-table-picks { margin: 0 8px 18px; color: var(--espresso); }
+.shared-table-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 4px 4px 12px; }
+.shared-table-heading strong { font-size: 1.08rem; }
+.shared-table-heading span { color: var(--muted); font-size: 0.82rem; font-weight: 750; }
+.shared-table-summary { display: grid; min-height: 116px; place-content: center; gap: 8px; padding: 18px; border-radius: 24px; background: rgba(69, 100, 79, 0.11); text-align: center; }
+.shared-table-summary strong { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--sage); font-size: clamp(1.35rem, 5vw, 1.75rem); }
+.shared-table-summary strong > span:first-child { font-size: 1.7rem; line-height: 1; }
+.shared-table-summary > span { color: var(--muted); font-size: 0.92rem; }
+.shared-table-pick { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-top: 14px; padding: 20px; border-radius: 24px; background: var(--paper); box-shadow: 0 8px 24px rgba(46, 23, 13, 0.05); }
+.shared-table-pick-copy { min-width: 0; font-size: 1.05rem; font-weight: 800; line-height: 1.25; }
 .shared-table-pick-copy > span { display: block; }
-.shared-table-price { margin-top: 2px; color: var(--espresso); font-size: 0.78rem; font-weight: 800; }
-.shared-table-names { margin-top: 2px; overflow: hidden; color: var(--muted) !important; font-size: 0.73rem; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
+.shared-table-pick-meta { display: flex; flex: 0 0 auto; align-items: flex-end; flex-direction: column; gap: 10px; }
+.shared-table-price { color: var(--espresso); font-size: 1.05rem; font-weight: 850; white-space: nowrap; }
+.shared-table-count { padding: 7px 12px; border-radius: 999px; color: var(--sage); background: rgba(69, 100, 79, 0.11); font-size: 0.86rem; font-weight: 850; white-space: nowrap; }
+.shared-table-names { margin-top: 7px; overflow: hidden; color: var(--muted) !important; font-size: 0.82rem; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
 .shared-name-dialog { width: min(440px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 24px; color: var(--espresso); background: var(--paper); box-shadow: var(--shadow); }
 .shared-name-dialog::backdrop { background: rgba(20, 12, 8, 0.55); backdrop-filter: blur(4px); }
 .shared-name-dialog form { padding: 26px; }

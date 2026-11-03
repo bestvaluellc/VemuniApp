@@ -46,7 +46,14 @@
         <button id="display-name-button" class="shared-name-button" type="button">Add your name to Table Picks</button>
         <div id="picks-list" class="shared-picks-list" aria-live="polite" hidden></div>
         <section id="table-picks-panel" class="shared-table-picks" aria-live="polite" hidden>
-          <strong>Table Picks <span id="table-people-count"></span></strong>
+          <div class="shared-table-heading">
+            <strong>Table Picks</strong>
+            <span id="table-people-count"></span>
+          </div>
+          <div class="shared-table-summary">
+            <strong><span aria-hidden="true">👥</span><span id="table-picks-summary">0 items</span></strong>
+            <span>Updates automatically</span>
+          </div>
           <div id="table-picks-list"></div>
         </section>
         <label class="shared-search">
