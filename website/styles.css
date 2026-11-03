@@ -261,14 +261,14 @@ details p { margin-bottom: 0; color: var(--muted); }
 /* Shared menu */
 .shared-menu-page { min-height: 100vh; background: var(--cream); }
 .shared-shell { width: min(760px, calc(100% - 32px)); margin-inline: auto; }
-.shared-header { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--cream) 92%, transparent); backdrop-filter: blur(18px); }
+.shared-header { position: static; border-bottom: 1px solid var(--line); background: var(--cream); }
 .shared-nav { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .shared-badge { padding: 7px 11px; border-radius: 999px; color: var(--copper); background: rgba(184, 97, 50, 0.1); font-size: 0.75rem; font-weight: 850; text-transform: uppercase; letter-spacing: 0.08em; }
 .shared-main { min-height: calc(100vh - 160px); padding: 42px 0 80px; }
 .shared-title { padding: 10px 4px 25px; }
 .shared-title h1 { max-width: none; font-size: clamp(2.25rem, 10vw, 4rem); line-height: 1.03; letter-spacing: -0.055em; }
 .shared-expiry { margin: 14px 0 0; color: var(--muted); font-size: 0.83rem; }
-.shared-controls { position: sticky; top: 68px; z-index: 15; margin: 0 -8px 30px; padding: 12px 8px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--cream) 94%, transparent); backdrop-filter: blur(18px); }
+.shared-controls { position: static; margin: 0 -8px 30px; padding: 12px 8px 14px; border-bottom: 1px solid var(--line); background: var(--cream); }
 .shared-picks-summary { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 14px; color: var(--espresso); }
 .shared-picks-summary > span:first-child { color: var(--copper); }
 .shared-picks-summary #pick-count { color: var(--muted); }
@@ -286,6 +286,7 @@ details p { margin-bottom: 0; color: var(--muted); }
 .shared-table-pick > span:last-child { flex: 0 0 auto; color: var(--sage); font-weight: 850; }
 .shared-table-pick-copy { min-width: 0; }
 .shared-table-pick-copy > span { display: block; }
+.shared-table-price { margin-top: 2px; color: var(--espresso); font-size: 0.78rem; font-weight: 800; }
 .shared-table-names { margin-top: 2px; overflow: hidden; color: var(--muted) !important; font-size: 0.73rem; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
 .shared-name-dialog { width: min(440px, calc(100% - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 24px; color: var(--espresso); background: var(--paper); box-shadow: var(--shadow); }
 .shared-name-dialog::backdrop { background: rgba(20, 12, 8, 0.55); backdrop-filter: blur(4px); }
