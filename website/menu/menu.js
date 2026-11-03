@@ -107,7 +107,7 @@ function render() {
     sectionNode.append(heading);
 
     visibleItems.forEach(({ item, itemIndex }) => {
-      const key = `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`;
+      const key = itemKey(sectionIndex, itemIndex, item);
       sectionNode.append(menuCard(item, key));
     });
     sectionsNode.append(sectionNode);
@@ -117,8 +117,9 @@ function render() {
 }
 
 function menuCard(item, key) {
+  const options = pickOptions(item, key);
   const article = document.createElement("article");
-  article.className = `shared-menu-card${picks.has(key) ? " selected" : ""}`;
+  article.className = `shared-menu-card${options.some((option) => picks.has(option.key)) || picks.has(key) ? " selected" : ""}`;
 
   const top = document.createElement("div");
   top.className = "shared-item-top";
@@ -161,19 +162,25 @@ function menuCard(item, key) {
     article.append(tags);
   }
 
-  const pickButton = document.createElement("button");
-  pickButton.type = "button";
-  pickButton.className = "shared-pick-button";
-  pickButton.textContent = picks.has(key) ? "✓ Added to My Picks" : "+ Add to My Picks";
-  pickButton.addEventListener("click", () => {
-    if (!picks.has(key) && !displayName) {
-      pendingPickKey = key;
-      openNameDialog();
-      return;
-    }
-    togglePick(key);
+  const pickActions = document.createElement("div");
+  pickActions.className = "shared-pick-options";
+  options.forEach((option) => {
+    const pickButton = document.createElement("button");
+    const selected = picks.has(option.key);
+    pickButton.type = "button";
+    pickButton.className = "shared-pick-button";
+    pickButton.textContent = pickButtonText(option, selected);
+    pickButton.addEventListener("click", () => {
+      if (!selected && !displayName) {
+        pendingPickKey = option.key;
+        openNameDialog();
+        return;
+      }
+      togglePick(option.key);
+    });
+    pickActions.append(pickButton);
   });
-  article.append(pickButton);
+  article.append(pickActions);
   return article;
 }
 
@@ -212,27 +219,37 @@ function updatePicksSummary() {
   const pickedItems = [];
   const selectedPrices = [];
   menu.menuSections.forEach((section, sectionIndex) => section.items.forEach((item, itemIndex) => {
-    const key = `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`;
-    if (!picks.has(key)) return;
-    pickedItems.push({ key, item });
-    const match = String(item.price || "").match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
-    if (match) selectedPrices.push(Number(match[1]));
+    const key = itemKey(sectionIndex, itemIndex, item);
+    const options = pickOptions(item, key);
+    options.forEach((option) => {
+      if (!picks.has(option.key)) return;
+      pickedItems.push({ key: option.key, item, option });
+      const match = String(option.price || "").match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
+      if (match) selectedPrices.push(Number(match[1]));
+    });
+
+    // A shared menu created before serving choices existed may still contain a base pick.
+    if (options.every((option) => option.key !== key) && picks.has(key)) {
+      pickedItems.push({ key, item, option: { label: "", price: item.price } });
+      const match = String(item.price || "").match(/^\s*\$?(\d+(?:\.\d{1,2})?)\s*$/);
+      if (match) selectedPrices.push(Number(match[1]));
+    }
   }));
   const total = selectedPrices.reduce((sum, value) => sum + value, 0);
   document.querySelector("#pick-total").textContent = selectedPrices.length === picks.size && picks.size ? `Estimated ${formatCurrency(total)}` : "";
 
   const picksList = document.querySelector("#picks-list");
   picksList.replaceChildren();
-  pickedItems.forEach(({ key, item }) => {
+  pickedItems.forEach(({ key, item, option }) => {
     const row = document.createElement("div");
     row.className = "shared-picked-item";
 
     const name = document.createElement("span");
     name.className = "shared-picked-name";
-    name.textContent = item.originalName;
+    name.textContent = option.label ? `${item.originalName} · ${option.label}` : item.originalName;
     row.append(name);
 
-    const displayedPrice = optionalText(item.price);
+    const displayedPrice = optionalText(option.price);
     if (displayedPrice) {
       const price = document.createElement("span");
       price.className = "shared-picked-price";
@@ -244,7 +261,7 @@ function updatePicksSummary() {
     remove.type = "button";
     remove.className = "shared-picked-remove";
     remove.textContent = "Remove";
-    remove.setAttribute("aria-label", `Remove ${item.originalName} from My Picks`);
+    remove.setAttribute("aria-label", `Remove ${item.originalName}${option.label ? ` ${option.label}` : ""} from My Picks`);
     remove.addEventListener("click", () => {
       picks.delete(key);
       localStorage.setItem(picksKey, JSON.stringify([...picks]));
@@ -332,6 +349,26 @@ function normalize(value) {
 function optionalText(value) {
   const text = String(value ?? "").trim();
   return /^(null|undefined|n\/?a|none)$/i.test(text) ? "" : text;
+}
+
+function itemKey(sectionIndex, itemIndex, item) {
+  return `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`;
+}
+
+function pickOptions(item, baseKey) {
+  const wine = item.wineDetails || {};
+  const glassPrice = optionalText(wine.glassPrice);
+  const bottlePrice = optionalText(wine.bottlePrice);
+  const options = [];
+  if (glassPrice) options.push({ key: `${baseKey}|serving:glass`, label: "Glass", symbol: "🍷", price: glassPrice });
+  if (bottlePrice) options.push({ key: `${baseKey}|serving:bottle`, label: "Bottle", symbol: "🍾", price: bottlePrice });
+  return options.length ? options : [{ key: baseKey, label: "", symbol: "", price: item.price }];
+}
+
+function pickButtonText(option, selected) {
+  if (!option.label) return selected ? "✓ Added to My Picks" : "+ Add to My Picks";
+  const action = selected ? "✓ Added" : "+ Add";
+  return `${action} ${option.symbol} ${option.label}${option.price ? ` · ${option.price}` : ""}`;
 }
 
 function createParticipantID() {

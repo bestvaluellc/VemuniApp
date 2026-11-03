@@ -1138,11 +1138,19 @@ function sharedDisplayName(value) {
 
 function sharedMenuEntries(menu) {
   return (Array.isArray(menu?.menuSections) ? menu.menuSections : []).flatMap((section, sectionIndex) =>
-    (Array.isArray(section?.items) ? section.items : []).map((item, itemIndex) => ({
-      key: `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`,
-      name: item.originalName,
-      price: item.price || null
-    }))
+    (Array.isArray(section?.items) ? section.items : []).flatMap((item, itemIndex) => {
+      const key = `${sectionIndex}-${itemIndex}-${item.originalName}-${item.price || ""}`;
+      const entries = [{ key, name: item.originalName, price: item.price || null }];
+      const glassPrice = sharedNullableString(item?.wineDetails?.glassPrice, 80);
+      const bottlePrice = sharedNullableString(item?.wineDetails?.bottlePrice, 80);
+      if (glassPrice) {
+        entries.push({ key: `${key}|serving:glass`, name: `${item.originalName} · Glass`, price: glassPrice });
+      }
+      if (bottlePrice) {
+        entries.push({ key: `${key}|serving:bottle`, name: `${item.originalName} · Bottle`, price: bottlePrice });
+      }
+      return entries;
+    })
   );
 }
 
@@ -1176,7 +1184,12 @@ async function aggregatedTablePicks(menuRef, menu) {
   const tablePicks = [...counts.entries()]
     .map(([itemKey, aggregate]) => ({ itemKey, ...entryByKey.get(itemKey), ...aggregate }))
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
-  return { tablePicks, participantCount: tableParticipants.length, tableParticipants };
+  return {
+    tablePicks,
+    participantCount: tableParticipants.length,
+    tableParticipants,
+    currencyCode: sharedString(menu?.currencyCode, 8) || "USD"
+  };
 }
 
 async function authenticatedUser(request) {

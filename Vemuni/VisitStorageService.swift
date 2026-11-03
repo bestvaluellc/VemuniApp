@@ -37,6 +37,7 @@ struct SavedMenuPick: Codable, Equatable, Identifiable {
     let sectionName: String
     let originalName: String
     let englishName: String
+    let servingLabel: String?
     let price: String?
     let numericPrice: Double?
 
