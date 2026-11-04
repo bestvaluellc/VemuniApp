@@ -426,9 +426,9 @@ struct ResultsView: View {
 
     private var availableMenuFilters: [MenuItemFilter] {
         MenuItemFilter.allCases.filter { filter in
-            guard filter == .desserts else { return true }
+            guard filter != .all else { return true }
             return result.menuSections.contains { section in
-                section.items.contains { MenuItemFilter.desserts.matches(section: section, item: $0) }
+                section.items.contains { filter.matches(section: section, item: $0) }
             }
         }
     }
@@ -809,15 +809,25 @@ private enum MenuItemFilter: String, CaseIterable, Identifiable {
                 && !MenuItemFilter.wine.matches(section: section, item: item)
                 && !MenuItemFilter.desserts.matches(section: section, item: item)
         case .drinks:
-            return item.itemType == "drink"
-                || section.sectionType == "drink"
-                || ["drink", "drinks", "cocktail", "cocktails", "beer", "beers", "beverage", "beverages", "coffee", "tea"]
-                    .contains { containsMenuTerm($0, in: categoryText) }
+            if item.itemType == "food" || item.itemType == "wine" || section.sectionType == "wine" {
+                return false
+            }
+            if item.itemType == "drink" || section.sectionType == "drink" {
+                return true
+            }
+            guard item.itemType == nil, section.sectionType == nil else { return false }
+            return ["drink", "drinks", "cocktail", "cocktails", "beer", "beers", "beverage", "beverages", "coffee", "tea"]
+                .contains { containsMenuTerm($0, in: categoryText) }
         case .wine:
-            return item.itemType == "wine"
-                || section.sectionType == "wine"
-                || ["wine", "wines", "champagne", "prosecco", "sparkling", "rosé", "rose wine"]
-                    .contains { containsMenuTerm($0, in: categoryText) }
+            if item.itemType == "food" || item.itemType == "drink" || section.sectionType == "drink" {
+                return false
+            }
+            if item.itemType == "wine" || section.sectionType == "wine" {
+                return true
+            }
+            guard item.itemType == nil, section.sectionType == nil else { return false }
+            return ["wine", "wines", "champagne", "prosecco", "sparkling", "rosé", "rose wine"]
+                .contains { containsMenuTerm($0, in: categoryText) }
         case .desserts:
             let dessertSectionTerms = [
                 "dessert", "desserts", "sweet", "sweets", "pastry", "pastries", "after dinner"
@@ -1956,9 +1966,8 @@ private struct TablePicksView: View {
                                 }
                                 Spacer(minLength: 10)
                                 VStack(alignment: .trailing, spacing: 7) {
-                                    if let price = pick.price?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                       !price.isEmpty {
-                                        Text(price)
+                                    if pick.price?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                                        Text(pick.formattedPrice(currencyCode: summary.currencyCode))
                                             .font(.title3.weight(.bold))
                                             .foregroundStyle(VemuniTheme.espresso)
                                     }
@@ -2217,6 +2226,13 @@ private struct SharedTablePick: Decodable, Identifiable {
         guard matches.count == 1,
               let swiftRange = Range(matches[0].range, in: normalized) else { return nil }
         return Double(normalized[swiftRange])
+    }
+
+    func formattedPrice(currencyCode: String) -> String {
+        guard let numericPrice else { return price ?? "" }
+        return numericPrice.formatted(
+            .currency(code: currencyCode.isEmpty ? "USD" : currencyCode)
+        )
     }
 
     private enum CodingKeys: String, CodingKey { case itemKey, name, price, count, pickedBy }
