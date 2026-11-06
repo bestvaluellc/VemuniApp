@@ -701,6 +701,28 @@ struct ResultsView: View {
 
     private func receiptView(_ receipt: ReceiptAnalysis) -> some View {
         VStack(spacing: 18) {
+            if let restaurantName = result.restaurantName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !restaurantName.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "fork.knife")
+                        .font(.title3)
+                        .foregroundStyle(VemuniTheme.copper)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(restaurantName)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(VemuniTheme.espresso)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Bill summary")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(18)
+                .background(VemuniTheme.paper)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+            }
+
             if receiptImage != nil || receiptImagePath != nil {
                 Button { showingReceiptImage = true } label: {
                     Label("View receipt", systemImage: "doc.viewfinder")
@@ -719,6 +741,10 @@ struct ResultsView: View {
                     .padding(15)
                     .background(Color.orange.opacity(0.10))
                     .clipShape(RoundedRectangle(cornerRadius: 15))
+            }
+
+            if !receipt.lineItems.isEmpty {
+                billItemsView(receipt.lineItems)
             }
 
             VStack(spacing: 11) {
@@ -761,6 +787,30 @@ struct ResultsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 20))
             }
         }
+    }
+
+    private func billItemsView(_ items: [ReceiptLineItem]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Bill Items", systemImage: "list.bullet.rectangle")
+                .font(.headline)
+                .foregroundStyle(VemuniTheme.espresso)
+
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                if index > 0 { Divider() }
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(item.name)
+                        .font(.body.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Text(currency(item.amount))
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(VemuniTheme.espresso)
+                }
+            }
+        }
+        .padding(18)
+        .background(VemuniTheme.paper)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     private var warnings: some View {
