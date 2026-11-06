@@ -4,6 +4,9 @@ import FirebaseFunctions
 import SwiftUI
 import UIKit
 
+// Set to 0 for name/price only, or 1...3 to preview denser or more descriptive menu cards.
+private let menuListDescriptionLineLimit = 3
+
 struct ResultsView: View {
     let result: VemuniScanResult
     let saveState: ScanSaveState?
@@ -98,7 +101,13 @@ struct ResultsView: View {
         }
         .sheet(isPresented: $showingTablePicks) {
             if let sharedMenuSession {
-                TablePicksView(session: sharedMenuSession)
+                TablePicksView(
+                    session: sharedMenuSession,
+                    myPickCount: selectedItems.count,
+                    myPricedPickCount: selectedItems.compactMap(\.numericPrice).count,
+                    myPicksTotal: selectedItems.compactMap(\.numericPrice).reduce(0, +),
+                    currencyCode: result.currencyCode
+                )
             }
         }
         .confirmationDialog("Share menu", isPresented: $showingShareOptions, titleVisibility: .visible) {
@@ -249,29 +258,67 @@ struct ResultsView: View {
         }
 
         ForEach(filteredMenuSections) { section in
-            Section {
-                ForEach(section.items) { item in
-                    NavigationLink {
-                        itemDestination(item, sectionID: section.sourceID)
-                            .onAppear {
-                                VemuniAnalytics.menuItemOpened(
-                                    hasAllergenHints: !item.allergens.isEmpty,
-                                    hasDietaryHints: !item.dietary.isEmpty
-                                )
-                            }
-                    } label: {
-                        MenuItemRow(
-                            item: item,
-                            isInOrder: isItemSelected(item, in: section.sourceID)
-                        )
-                    }
-                    .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 18) {
+                if !section.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(section.name.uppercased())
+                        .font(.system(.headline, design: .serif, weight: .bold))
+                        .foregroundStyle(VemuniTheme.copper)
+                        .padding(.top, 4)
                 }
-            } header: {
-                Text(section.name.uppercased())
-                    .font(.system(.headline, design: .serif, weight: .bold))
-                    .foregroundStyle(VemuniTheme.copper)
-                    .padding(.top, 4)
+
+                ForEach(section.items) { item in
+                    let supportsQuickPick = canQuickPick(item)
+                    let isSelected = isItemSelected(item, in: section.sourceID)
+                    ZStack(alignment: .topTrailing) {
+                        NavigationLink {
+                            itemDestination(item, sectionID: section.sourceID)
+                                .onAppear {
+                                    VemuniAnalytics.menuItemOpened(
+                                        hasAllergenHints: !item.allergens.isEmpty,
+                                        hasDietaryHints: !item.dietary.isEmpty
+                                    )
+                                }
+                        } label: {
+                            MenuItemRow(
+                                item: item,
+                                isInOrder: isSelected,
+                                showsQuickPick: supportsQuickPick
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        if supportsQuickPick {
+                            Button {
+                                let key = selectionKey(item, in: section.sourceID)
+                                if isSelected {
+                                    selectedItemIDs.remove(key)
+                                } else {
+                                    selectedItemIDs.insert(key)
+                                }
+                            } label: {
+                                Image(systemName: isSelected ? "checkmark" : "plus")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(isSelected ? Color.white : VemuniTheme.copper)
+                                    .frame(width: 32, height: 32)
+                                    .background(isSelected ? VemuniTheme.sage : Color.clear)
+                                    .clipShape(Circle())
+                                    .overlay {
+                                        Circle()
+                                            .stroke(isSelected ? VemuniTheme.sage : VemuniTheme.copper, lineWidth: 1.5)
+                                    }
+                                    .frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.top, 4)
+                            .padding(.trailing, 16)
+                            .accessibilityLabel(
+                                isSelected
+                                    ? "Remove \(item.originalName) from My Picks"
+                                    : "Add \(item.originalName) to My Picks"
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -279,17 +326,13 @@ struct ResultsView: View {
 
     private var menuControls: some View {
         VStack(spacing: 0) {
-            if !selectedItemIDs.isEmpty {
+            if sharedMenuSession == nil, !selectedItemIDs.isEmpty {
                 orderBar
                 Divider().opacity(0.45)
             }
             if sharedMenuSession != nil {
                 tablePicksBar
                 Divider().opacity(0.45)
-                if !selectedItemIDs.isEmpty || tablePicksSummary.totalPickCount > 0 {
-                    allPicksBar
-                    Divider().opacity(0.45)
-                }
             }
             menuFilters
         }
@@ -351,42 +394,6 @@ struct ResultsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Show Table Picks, \(tablePicksSummary.compactSummary)")
-    }
-
-    private var allPicksBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checklist")
-                .foregroundStyle(VemuniTheme.sage)
-            Text("All Picks")
-                .fontWeight(.semibold)
-            Text("· \(allPicksItemCount) \(allPicksItemCount == 1 ? "item" : "items")")
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(allPicksTotalText)
-                .fontWeight(.bold)
-        }
-        .font(.subheadline)
-        .foregroundStyle(VemuniTheme.espresso)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 11)
-        .background(VemuniTheme.sage.opacity(0.10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("All Picks, \(allPicksItemCount) items, \(allPicksTotalText)")
-    }
-
-    private var allPicksItemCount: Int {
-        selectedItems.count + tablePicksSummary.totalPickCount
-    }
-
-    private var allPicksTotalText: String {
-        let myPrices = selectedItems.compactMap(\.numericPrice)
-        let pricedCount = myPrices.count + tablePicksSummary.pricedPickCount
-        guard pricedCount > 0 else { return "View" }
-        let total = myPrices.reduce(0, +) + tablePicksSummary.estimatedTotal
-        let formatted = total.formatted(
-            .currency(code: result.currencyCode.isEmpty ? "USD" : result.currencyCode)
-        )
-        return pricedCount == allPicksItemCount ? formatted : "\(formatted)+"
     }
 
     private var menuFilters: some View {
@@ -662,6 +669,17 @@ struct ResultsView: View {
                 }
             }
         )
+    }
+
+    private func canQuickPick(_ item: MenuItem) -> Bool {
+        guard item.wineDetails == nil,
+              let price = item.displayPrice,
+              !price.isEmpty,
+              let expression = try? NSRegularExpression(pattern: #"\d+(?:[.,]\d{1,2})?"#) else {
+            return false
+        }
+        let range = NSRange(price.startIndex..., in: price)
+        return expression.numberOfMatches(in: price, range: range) == 1
     }
 
     @ViewBuilder
@@ -1125,14 +1143,9 @@ private struct OrderSummaryView: View {
 private struct MenuItemRow: View {
     let item: MenuItem
     let isInOrder: Bool
+    let showsQuickPick: Bool
     var body: some View {
-        Group {
-            if let wine = item.wineDetails {
-                wineRow(wine)
-            } else {
-                standardRow
-            }
-        }
+        compactRow
         .padding(16)
         .background(isInOrder ? VemuniTheme.sage.opacity(0.20) : VemuniTheme.paper)
         .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -1144,146 +1157,53 @@ private struct MenuItemRow: View {
         }
     }
 
-    private var standardRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            if let itemSymbol {
-                Image(systemName: itemSymbol)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(VemuniTheme.copper)
-                    .frame(width: 20)
-                    .padding(.top, 2)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(rowTitle)
+    private var compactRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(item.originalName)
                     .font(.headline)
                     .foregroundStyle(VemuniTheme.espresso)
-                if item.hasDistinctEnglishName {
-                    Text(item.englishName).font(.subheadline.weight(.medium))
-                    Text(item.explanation)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                } else if !item.explanation.isEmpty {
-                    Text(item.explanation)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-                if item.itemType == "drink", let drink = item.drinkDetails,
-                   !drink.flavorProfile.isEmpty {
-                    Text(drink.flavorProfile.joined(separator: " • "))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(VemuniTheme.sage)
-                } else if !item.dietary.isEmpty {
-                    Text(item.dietary.joined(separator: " • "))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(VemuniTheme.sage)
-                }
-            }
-            Spacer(minLength: 8)
-            if let price = item.displayPrice {
-                Text(price).font(.headline).foregroundStyle(VemuniTheme.espresso)
-            }
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
-        }
-    }
-
-    private func wineRow(_ wine: WineDetails) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "wineglass")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(VemuniTheme.copper)
-                    .frame(width: 20)
-                Text(rowTitle)
-                    .font(.headline)
-                    .foregroundStyle(VemuniTheme.espresso)
+                    .lineLimit(2)
                 Spacer(minLength: 8)
                 if let price = item.displayPrice {
-                    Text(price)
+                    Text(menuListPrice(price))
                         .font(.headline)
                         .foregroundStyle(VemuniTheme.espresso)
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
-            }
-
-            let details = wineSummary(wine, excluding: rowTitle)
-            if !details.isEmpty {
-                Text(details)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 32)
-            } else if !item.explanation.isEmpty {
-                Text(item.explanation)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 32)
-            }
-
-            if !wine.foodPairings.isEmpty {
-                Label {
-                    Text(wine.foodPairings.prefix(3).joined(separator: " • "))
-                        .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "fork.knife")
+                if showsQuickPick {
+                    Color.clear
+                        .frame(width: 44, height: 32)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 4)
                 }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(VemuniTheme.sage)
-                .padding(.leading, 32)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Pairs with \(wine.foodPairings.prefix(3).joined(separator: ", "))")
+            }
+            if menuListDescriptionLineLimit > 0, !listDescription.isEmpty {
+                Text(listDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(menuListDescriptionLineLimit)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
 
-    private var itemSymbol: String? {
-        switch item.itemType {
-        case "wine": return "wineglass"
-        case "drink": return "martini"
-        default: return nil
-        }
+    private var listDescription: String {
+        let explanation = item.explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard item.hasDistinctEnglishName else { return explanation }
+        let englishName = item.englishName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [englishName, explanation].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    private var rowTitle: String {
-        guard let producer = item.wineDetails?.producer?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !producer.isEmpty else {
-            return item.originalName
-        }
-        return producer
+    private func menuListPrice(_ price: String) -> String {
+        let trimmed = price.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first?.isNumber == true else { return trimmed }
+        return "$\(trimmed)"
     }
 
-    private func wineSummary(_ wine: WineDetails, excluding title: String) -> String {
-        let printedDetails = [wine.grape, wine.region, wine.vintage, wine.style]
-            .compactMap { (value: String?) -> String? in
-                guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !value.isEmpty,
-                      !title.localizedCaseInsensitiveContains(value) else { return nil }
-                return value
-            }
-            .reduce(into: [String]()) { values, value in
-                guard !values.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else { return }
-                values.append(value)
-            }
-        if !printedDetails.isEmpty {
-            return printedDetails.joined(separator: " • ")
-        }
-
-        let profile = [wine.body, wine.sweetness]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        if !profile.isEmpty {
-            return profile.joined(separator: " • ")
-        }
-        return wine.flavors.prefix(3).joined(separator: " • ")
-    }
 }
 
 private struct WinePickOption: Identifiable, Hashable {
@@ -1292,6 +1212,11 @@ private struct WinePickOption: Identifiable, Hashable {
     let symbolName: String
     let price: String
     let numericPrice: Double?
+
+    var buttonPrice: String {
+        guard price.first?.isNumber == true else { return price }
+        return "$\(price)"
+    }
 }
 
 private func winePickOptions(for wine: WineDetails) -> [WinePickOption] {
@@ -1307,7 +1232,13 @@ private func winePickOption(id: String, label: String, symbolName: String, price
     let normalized = price.replacingOccurrences(of: ",", with: ".")
     let number = normalized.range(of: #"\d+(?:\.\d{1,2})?"#, options: .regularExpression)
         .flatMap { Double(normalized[$0]) }
-    return WinePickOption(id: id, label: label, symbolName: symbolName, price: price, numericPrice: number)
+    return WinePickOption(
+        id: id,
+        label: label,
+        symbolName: symbolName,
+        price: price,
+        numericPrice: number
+    )
 }
 
 private struct WinePickSelectionButtons: View {
@@ -1330,29 +1261,37 @@ private struct WinePickSelectionButtons: View {
                         dismiss()
                     }
                 } label: {
-                    VStack(spacing: 2) {
-                        HStack(spacing: 6) {
-                            Image(systemName: option.symbolName)
-                            Text(isSelected ? "Added \(option.label.lowercased())" : "Add \(option.label.lowercased())")
-                                .lineLimit(1)
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
+                    HStack(spacing: 8) {
+                        servingIcon(for: option)
+                            .foregroundStyle(VemuniTheme.copper)
+                        Text(option.buttonPrice)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                        Spacer(minLength: 2)
+                        Image(systemName: isSelected ? "checkmark" : "plus")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(isSelected ? Color.white : VemuniTheme.copper)
+                            .frame(width: 36, height: 36)
+                            .background(isSelected ? VemuniTheme.sage : Color.clear)
+                            .clipShape(Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(isSelected ? VemuniTheme.sage : VemuniTheme.copper, lineWidth: 1.5)
                             }
-                        }
-                        Text(option.price)
-                            .font(.subheadline.weight(.semibold))
                     }
                     .font(.headline)
-                    .foregroundStyle(isSelected ? VemuniTheme.espresso : Color.white)
+                    .foregroundStyle(VemuniTheme.espresso)
+                    .padding(.horizontal, 12)
                     .frame(maxWidth: .infinity)
                     .frame(height: 58)
-                    .background(isSelected ? VemuniTheme.paper : VemuniTheme.primaryAction)
+                    .background(isSelected ? VemuniTheme.sage.opacity(0.14) : VemuniTheme.paper)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay {
-                        if isSelected {
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(VemuniTheme.sage, lineWidth: 1.5)
-                        }
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                isSelected ? VemuniTheme.sage : VemuniTheme.copper.opacity(0.55),
+                                lineWidth: 1.5
+                            )
                     }
                 }
                 .buttonStyle(.plain)
@@ -1371,6 +1310,21 @@ private struct WinePickSelectionButtons: View {
 
     private func selectionKey(for option: WinePickOption) -> String {
         "\(baseSelectionKey)|serving:\(option.id)"
+    }
+
+    @ViewBuilder
+    private func servingIcon(for option: WinePickOption) -> some View {
+        if option.id == "bottle" {
+            Image("WineBottle")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 24)
+        } else {
+            Image(systemName: option.symbolName)
+                .font(.headline)
+                .frame(width: 20, height: 24)
+        }
     }
 }
 
@@ -1393,7 +1347,7 @@ private struct OrderSelectionButton: View {
                 Text(isInOrder ? "Added to my picks" : "Add to my picks")
                 Spacer()
                 if let price = item.displayPrice, !price.isEmpty {
-                    Text(price)
+                    Text(detailButtonPrice(price))
                 }
             }
             .font(.headline)
@@ -1415,6 +1369,12 @@ private struct OrderSelectionButton: View {
         .padding(.bottom, 6)
         .background(.bar)
         .accessibilityLabel(isInOrder ? "Remove \(item.originalName) from my picks" : "Add \(item.originalName) to my picks")
+    }
+
+    private func detailButtonPrice(_ price: String) -> String {
+        let trimmed = price.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first?.isNumber == true else { return trimmed }
+        return "$\(trimmed)"
     }
 }
 
@@ -1637,6 +1597,7 @@ private struct DrinkDetailView: View {
             }
         }
     }
+
 }
 
 private struct FlowingTags: View {
@@ -1921,6 +1882,10 @@ private struct TableQRCodeView: View {
 private struct TablePicksView: View {
     @Environment(\.dismiss) private var dismiss
     let session: SharedMenuSession
+    let myPickCount: Int
+    let myPricedPickCount: Int
+    let myPicksTotal: Double
+    let currencyCode: String
     @State private var summary = SharedTablePicksResponse.empty
     @State private var errorMessage: String?
     @State private var showingClearConfirmation = false
@@ -1930,19 +1895,38 @@ private struct TablePicksView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 18) {
-                    VStack(spacing: 7) {
+                VStack(spacing: 12) {
+                    VStack(spacing: 5) {
                         Label(summary.compactSummary, systemImage: "person.2.fill")
-                            .font(.title2.weight(.bold))
+                            .font(.headline.weight(.bold))
                             .foregroundStyle(VemuniTheme.sage)
                         Text("Updates automatically")
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(22)
+                    .padding(.vertical, 13)
+                    .padding(.horizontal, 16)
                     .background(VemuniTheme.sage.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                    VStack(spacing: 0) {
+                        picksSummaryRow(
+                            title: "My Picks",
+                            count: myPickCount,
+                            total: myPicksTotal,
+                            pricedCount: myPricedPickCount
+                        )
+                        Divider().opacity(0.45)
+                        picksSummaryRow(
+                            title: "All Picks",
+                            count: myPickCount + summary.totalPickCount,
+                            total: myPicksTotal + summary.estimatedTotal,
+                            pricedCount: myPricedPickCount + summary.pricedPickCount
+                        )
+                    }
+                    .background(VemuniTheme.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
 
                     if summary.tablePicks.isEmpty {
                         ContentUnavailableView(
@@ -1953,36 +1937,37 @@ private struct TablePicksView: View {
                         .padding(.vertical, 36)
                     } else {
                         ForEach(summary.tablePicks) { pick in
-                            HStack(alignment: .top, spacing: 14) {
-                                VStack(alignment: .leading, spacing: 5) {
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text(pick.name)
-                                        .font(.title3.weight(.semibold))
+                                        .font(.body.weight(.semibold))
                                         .foregroundStyle(VemuniTheme.espresso)
                                     if !pick.pickedBy.isEmpty {
                                         Text(pick.pickedBy.joined(separator: " · "))
-                                            .font(.subheadline)
+                                            .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                 }
-                                Spacer(minLength: 10)
-                                VStack(alignment: .trailing, spacing: 7) {
+                                Spacer(minLength: 8)
+                                VStack(alignment: .trailing, spacing: 5) {
                                     if pick.price?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
                                         Text(pick.formattedPrice(currencyCode: summary.currencyCode))
-                                            .font(.title3.weight(.bold))
+                                            .font(.body.weight(.bold))
                                             .foregroundStyle(VemuniTheme.espresso)
                                     }
                                     Text("\(pick.count) \(pick.count == 1 ? "pick" : "picks")")
-                                        .font(.headline)
+                                        .font(.caption.weight(.semibold))
                                         .foregroundStyle(pick.count == 1 ? VemuniTheme.sage : VemuniTheme.copper)
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
+                                        .padding(.horizontal, 9)
+                                        .padding(.vertical, 5)
                                         .background((pick.count == 1 ? VemuniTheme.sage : VemuniTheme.copper).opacity(0.12))
                                         .clipShape(Capsule())
                                 }
                             }
-                            .padding(18)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
                             .background(VemuniTheme.paper)
-                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
 
                         if !summary.tableParticipants.isEmpty {
@@ -2006,9 +1991,9 @@ private struct TablePicksView: View {
                                     .padding(.vertical, 4)
                                 }
                             }
-                            .padding(18)
+                            .padding(14)
                             .background(VemuniTheme.paper)
-                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
 
                         Button("Clear Table Picks", role: .destructive) {
@@ -2028,7 +2013,7 @@ private struct TablePicksView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .padding(20)
+                .padding(16)
             }
             .background(VemuniTheme.cream.ignoresSafeArea())
             .navigationTitle("Table Picks")
@@ -2065,6 +2050,30 @@ private struct TablePicksView: View {
                 Text("This removes that browser’s picks from the table.")
             }
         }
+    }
+
+    @ViewBuilder
+    private func picksSummaryRow(title: String, count: Int, total: Double, pricedCount: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .fontWeight(.semibold)
+            Spacer()
+            Text("\(count) \(count == 1 ? "item" : "items")")
+                .foregroundStyle(.secondary)
+            Text(summaryTotalText(total: total, pricedCount: pricedCount, itemCount: count))
+                .fontWeight(.semibold)
+        }
+        .font(.subheadline)
+        .foregroundStyle(VemuniTheme.espresso)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func summaryTotalText(total: Double, pricedCount: Int, itemCount: Int) -> String {
+        guard pricedCount > 0 else { return "—" }
+        let code = currencyCode.isEmpty ? summary.currencyCode : currencyCode
+        let formatted = total.formatted(.currency(code: code.isEmpty ? "USD" : code))
+        return pricedCount == itemCount ? formatted : "\(formatted)+"
     }
 
     @MainActor
