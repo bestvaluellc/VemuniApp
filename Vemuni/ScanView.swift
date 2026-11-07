@@ -302,8 +302,8 @@ struct ScanView: View {
             }
 
             Text(images.count == maximumPageCount
-                 ? "Maximum of \(maximumPageCount) pages reached"
-                 : "\(images.count) of \(maximumPageCount) pages selected")
+                 ? "Maximum of \(maximumPageCount) pages selected"
+                 : "\(images.count) \(images.count == 1 ? "page" : "pages") selected")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(images.count == maximumPageCount ? VemuniTheme.copper : Color.secondary)
         }

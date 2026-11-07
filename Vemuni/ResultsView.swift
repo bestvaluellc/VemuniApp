@@ -535,6 +535,20 @@ struct ResultsView: View {
                             ))
                         }
                     }
+                } else {
+                    for option in portionPickOptions(for: item) {
+                        let key = portionSelectionKey(item, in: section.id, option: option)
+                        if selectedItemIDs.contains(key) {
+                            values.append(OrderItem(
+                                key: key,
+                                sectionName: section.name,
+                                item: item,
+                                servingLabel: option.label,
+                                displayPrice: option.price,
+                                numericPrice: option.numericPrice
+                            ))
+                        }
+                    }
                 }
                 return values
             }
@@ -648,12 +662,20 @@ struct ResultsView: View {
         "\(selectionKey(item, in: sectionID))|serving:\(option.id)"
     }
 
+    private func portionSelectionKey(_ item: MenuItem, in sectionID: String, option: PortionPickOption) -> String {
+        "\(selectionKey(item, in: sectionID))|portion:\(option.id)"
+    }
+
     private func isItemSelected(_ item: MenuItem, in sectionID: String) -> Bool {
         let baseKey = selectionKey(item, in: sectionID)
         if selectedItemIDs.contains(baseKey) { return true }
-        guard let wine = item.wineDetails else { return false }
-        return winePickOptions(for: wine).contains {
-            selectedItemIDs.contains(wineSelectionKey(item, in: sectionID, option: $0))
+        if let wine = item.wineDetails {
+            return winePickOptions(for: wine).contains {
+                selectedItemIDs.contains(wineSelectionKey(item, in: sectionID, option: $0))
+            }
+        }
+        return portionPickOptions(for: item).contains {
+            selectedItemIDs.contains(portionSelectionKey(item, in: sectionID, option: $0))
         }
     }
 
@@ -695,7 +717,12 @@ struct ResultsView: View {
         } else if item.itemType == "drink", let drink = item.drinkDetails {
             DrinkDetailView(item: item, drink: drink, isInOrder: selectionBinding(item, in: sectionID))
         } else {
-            MenuItemDetailView(item: item, isInOrder: selectionBinding(item, in: sectionID))
+            MenuItemDetailView(
+                item: item,
+                baseSelectionKey: selectionKey(item, in: sectionID),
+                portionOptions: portionPickOptions(for: item),
+                selectedItemIDs: $selectedItemIDs
+            )
         }
     }
 
@@ -1124,12 +1151,28 @@ private struct OrderSummaryView: View {
                                 Text(orderItem.item.originalName)
                                     .font(.body.weight(.semibold))
                                 if let servingLabel = orderItem.servingLabel {
-                                    Label(
-                                        servingLabel,
-                                        systemImage: servingLabel == "Glass" ? "wineglass" : "waterbottle.fill"
-                                    )
+                                    HStack(spacing: 5) {
+                                        if orderItem.item.wineDetails != nil {
+                                            if servingLabel == "Glass" {
+                                                Image(systemName: "wineglass")
+                                            } else {
+                                                Image("WineBottle")
+                                                    .renderingMode(.template)
+                                                    .resizable()
+                                                    .scaledToFit()
+                                                    .frame(width: 11, height: 14)
+                                            }
+                                        } else {
+                                            Image(systemName: "fork.knife")
+                                        }
+                                        Text(servingLabel)
+                                    }
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(VemuniTheme.copper)
+                                } else if let badge = categoryBadge(for: orderItem) {
+                                    Label(badge.text, systemImage: badge.symbol)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(VemuniTheme.copper)
                                 }
                                 if orderItem.item.hasDistinctEnglishName {
                                     Text(orderItem.item.englishName)
@@ -1138,7 +1181,7 @@ private struct OrderSummaryView: View {
                                 }
                             }
                             Spacer()
-                            Text(orderItem.displayPrice ?? "—")
+                            Text(formattedPickPrice(orderItem.displayPrice))
                                 .foregroundStyle(VemuniTheme.espresso)
                             Button {
                                 remove(orderItem.key)
@@ -1187,6 +1230,32 @@ private struct OrderSummaryView: View {
 
     private var subtotal: Double {
         items.compactMap(\.numericPrice).reduce(0, +)
+    }
+
+    private func formattedPickPrice(_ price: String?) -> String {
+        guard let price = price?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !price.isEmpty else { return "—" }
+        guard price.first?.isNumber == true else { return price }
+        return "$\(price)"
+    }
+
+    private func categoryBadge(for orderItem: OrderItem) -> (text: String, symbol: String)? {
+        let itemType = orderItem.item.itemType?.lowercased() ?? ""
+        let section = orderItem.sectionName.lowercased()
+
+        if itemType == "drink"
+            || ["drink", "cocktail", "mocktail", "beer", "spirit", "beverage"]
+                .contains(where: { section.contains($0) }) {
+            return ("Drink", "martini")
+        }
+
+        if itemType == "dessert"
+            || ["dessert", "sweet", "pastry", "ice cream"]
+                .contains(where: { section.contains($0) }) {
+            return ("Dessert", "birthday.cake")
+        }
+
+        return nil
     }
 }
 
@@ -1269,6 +1338,62 @@ private struct WinePickOption: Identifiable, Hashable {
     }
 }
 
+private struct PortionPickOption: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let price: String
+    let numericPrice: Double
+
+    var buttonPrice: String {
+        guard price.first?.isNumber == true else { return price }
+        return "$\(price)"
+    }
+}
+
+private func portionPickOptions(for item: MenuItem) -> [PortionPickOption] {
+    guard item.wineDetails == nil,
+          let price = item.displayPrice?.trimmingCharacters(in: .whitespacesAndNewlines),
+          price.contains("/"),
+          price.range(
+              of: #"(?i)\b(oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg)\b"#,
+              options: .regularExpression
+          ) == nil,
+          let expression = try? NSRegularExpression(pattern: #"\d+(?:[.,]\d{1,2})?"#) else {
+        return []
+    }
+
+    let range = NSRange(price.startIndex..., in: price)
+    let matches = expression.matches(in: price, range: range)
+    guard matches.count == 2 else { return [] }
+
+    let values: [(text: String, number: Double)] = matches.compactMap { match in
+        guard let swiftRange = Range(match.range, in: price) else { return nil }
+        let text = String(price[swiftRange])
+        return Double(text.replacingOccurrences(of: ",", with: ".")).map { (text, $0) }
+    }
+    guard values.count == 2 else { return [] }
+
+    let lowercasedPrice = price.lowercased()
+    let labels: [String]
+    if lowercasedPrice.contains("half"), lowercasedPrice.contains("whole") {
+        labels = ["Half", "Whole"]
+    } else if lowercasedPrice.contains("cup"), lowercasedPrice.contains("bowl") {
+        labels = ["Cup", "Bowl"]
+    } else {
+        labels = ["Small", "Large"]
+    }
+
+    return zip(labels, values).map { pair in
+        let (label, value) = pair
+        return PortionPickOption(
+            id: label.lowercased(),
+            label: label,
+            price: value.text,
+            numericPrice: value.number
+        )
+    }
+}
+
 private func winePickOptions(for wine: WineDetails) -> [WinePickOption] {
     [
         winePickOption(id: "glass", label: "Glass", symbolName: "wineglass", price: wine.glassPrice),
@@ -1307,6 +1432,8 @@ private struct WinePickSelectionButtons: View {
                     if isSelected {
                         selectedItemIDs.remove(key)
                     } else {
+                        // Replace the unlabelled selection saved by earlier app versions.
+                        selectedItemIDs.remove(baseSelectionKey)
                         selectedItemIDs.insert(key)
                         dismiss()
                     }
@@ -1375,6 +1502,81 @@ private struct WinePickSelectionButtons: View {
                 .font(.headline)
                 .frame(width: 20, height: 24)
         }
+    }
+}
+
+private struct PortionPickSelectionButtons: View {
+    let item: MenuItem
+    let baseSelectionKey: String
+    let options: [PortionPickOption]
+    @Binding var selectedItemIDs: Set<String>
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(options) { option in
+                let key = selectionKey(for: option)
+                let isSelected = selectedItemIDs.contains(key)
+                Button {
+                    if isSelected {
+                        selectedItemIDs.remove(key)
+                    } else {
+                        // Replace the unlabelled selection saved by earlier app versions.
+                        selectedItemIDs.remove(baseSelectionKey)
+                        selectedItemIDs.insert(key)
+                        dismiss()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.label)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Text(option.buttonPrice)
+                                .font(.headline)
+                                .foregroundStyle(VemuniTheme.espresso)
+                        }
+                        Spacer(minLength: 2)
+                        Image(systemName: isSelected ? "checkmark" : "plus")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(isSelected ? Color.white : VemuniTheme.copper)
+                            .frame(width: 36, height: 36)
+                            .background(isSelected ? VemuniTheme.sage : Color.clear)
+                            .clipShape(Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(isSelected ? VemuniTheme.sage : VemuniTheme.copper, lineWidth: 1.5)
+                            }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .background(isSelected ? VemuniTheme.sage.opacity(0.14) : VemuniTheme.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(
+                                isSelected ? VemuniTheme.sage : VemuniTheme.copper.opacity(0.55),
+                                lineWidth: 1.5
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    isSelected
+                        ? "Remove \(option.label) \(item.originalName) from my picks"
+                        : "Add \(option.label) \(item.originalName) to my picks"
+                )
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background(.bar)
+    }
+
+    private func selectionKey(for option: PortionPickOption) -> String {
+        "\(baseSelectionKey)|portion:\(option.id)"
     }
 }
 
@@ -1675,7 +1877,10 @@ private struct FlowingTags: View {
 
 private struct MenuItemDetailView: View {
     let item: MenuItem
-    @Binding var isInOrder: Bool
+    let baseSelectionKey: String
+    let portionOptions: [PortionPickOption]
+    @Binding var selectedItemIDs: Set<String>
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -1703,10 +1908,29 @@ private struct MenuItemDetailView: View {
         }
         .background(VemuniTheme.cream.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
-            OrderSelectionButton(item: item, isInOrder: $isInOrder)
+            if portionOptions.isEmpty {
+                OrderSelectionButton(item: item, isInOrder: baseSelectionBinding)
+            } else {
+                PortionPickSelectionButtons(
+                    item: item,
+                    baseSelectionKey: baseSelectionKey,
+                    options: portionOptions,
+                    selectedItemIDs: $selectedItemIDs
+                )
+            }
         }
         .navigationTitle("Dish details")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var baseSelectionBinding: Binding<Bool> {
+        Binding(
+            get: { selectedItemIDs.contains(baseSelectionKey) },
+            set: { isSelected in
+                if isSelected { selectedItemIDs.insert(baseSelectionKey) }
+                else { selectedItemIDs.remove(baseSelectionKey) }
+            }
+        )
     }
 
     private func detail(_ title: String, _ value: String, symbol: String) -> some View {
